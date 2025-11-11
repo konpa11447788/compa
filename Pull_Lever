@@ -1,0 +1,2328 @@
+-- _G.Color_Open = "Kupapund872" -- ตัวเหยียบสี
+-- _G.Change_Race = 'Ghoul' -- เผ่าที่ต้องการ
+-- _G.Key_Banana_Hub = "7324e7254a45c361f7c9f283"
+if not game:IsLoaded() then
+    repeat
+        game.Loaded:Wait()
+    until game:IsLoaded()
+    wait(3)
+end
+repeat
+    task.wait()
+until game:IsLoaded()
+repeat
+    task.wait()
+until game.Players
+repeat
+    task.wait()
+until game.Players.LocalPlayer
+repeat
+    task.wait()
+until game.Players.LocalPlayer:FindFirstChild("PlayerGui")
+if game.Players.LocalPlayer.Team == nil then
+    repeat
+        task.wait()
+        if game:GetService("Players").LocalPlayer.PlayerGui:WaitForChild("Main (minimal)").ChooseTeam.Visible == true then
+            for i, v in pairs(getconnections(game:GetService("Players").LocalPlayer.PlayerGui['Main (minimal)']
+                                                 .ChooseTeam.Container["Pirates"].Frame.TextButton.Activated)) do
+                for a, b in pairs(getconnections(game:GetService("UserInputService").TouchTapInWorld)) do
+                    b:Fire()
+                end
+                v.Function()
+            end
+        end
+    until game.Players.LocalPlayer.Team ~= nil and game:IsLoaded()
+end
+local placeId = game.PlaceId
+if placeId == 2753915549 then
+    Old_World = true
+elseif placeId == 4442272183 then
+    New_World = true
+elseif placeId == 7449423635 then
+    Three_World = true
+end
+
+-- Attack
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local CombatUtils = require(ReplicatedStorage.Modules.CombatUtil)
+local CachedAim = {}
+local AimIndex, CurrentWeapon = 1, ""
+local Net = require(ReplicatedStorage.Modules.Net)
+local RegisterHitEvent = Net:RemoteEvent("RegisterHit", true)
+local CombatMode = "MULIT" -- NORMAL or MULIT
+local gameFlags = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Flags"));
+local RegisterHitRemoteThread = nil
+local Hitboxes = {"HumanoidRootPart", "RightUpperArm", "RightLowerArm", "RightHand", "RightUpperLeg", "RightLowerLeg",
+                  "RightFoot", "LeftUpperArm", "LeftLowerArm", "LeftHand", "LeftUpperLeg", "LeftLowerLeg", "LeftFoot",
+                  "UpperTorso", "LowerTorso", "Head", "ModelHitbox"};
+local game_AttackGun = function(...)
+    return ...
+end
+
+for i, v in pairs(getgc()) do
+    if typeof(v) == "function" and getfenv(v).script == ReplicatedStorage.Modules.CombatUtil then
+        if gameFlags.COMBAT_REMOTE_THREAD and debug.getinfo(v).name == "registerHit" then
+            RegisterHitRemoteThread = debug.getupvalue(v, 4)
+        elseif debug.getinfo(v).name == "shootGun" then
+            game_AttackGun = v
+        end
+    end
+end
+
+function getWeaponName(Instnace)
+    local Humanoid = game.Players.LocalPlayer.Character.Humanoid
+    if not Humanoid then
+        return
+    end
+    local Tool = game.Players.LocalPlayer.Character:FindFirstChildOfClass("Tool")
+    if Tool then
+        if Instnace then
+            return Tool
+        end
+        if Tool:GetAttribute("WeaponName") then
+            return Tool:GetAttribute("WeaponName")
+        end
+        return Tool.Name
+    end
+    return nil
+end
+
+function getWeapon()
+    local Humanoid = game.Players.LocalPlayer.Character.Humanoid
+    if not Humanoid then
+        return
+    end
+    local Tool = game.Players.LocalPlayer.Character:FindFirstChildOfClass("Tool")
+    if Tool then
+        return Tool
+    end
+    return nil
+end
+
+function getCacheAim(k)
+    if CurrentWeapon ~= k then
+        AimIndex = 1
+    end
+    if CachedAim[k .. tostring(AimIndex)] == nil then
+        AimIndex = 1
+        if CachedAim[k .. tostring(AimIndex)] then
+            return CachedAim[k .. tostring(AimIndex)]
+        end
+        local GetMovesetAnimCache = CombatUtils:GetMovesetAnimCache(game.Players.LocalPlayer.Character.Humanoid)
+        local WeaponName = getWeaponName()
+        if not GetMovesetAnimCache then
+            return
+        end
+        if not WeaponName then
+            return
+        end
+        for i, AnimCache in pairs(GetMovesetAnimCache) do
+            local registerBlade = AnimCache.Length / (AnimCache:GetAttribute("SpeedMult") or 1)
+            CachedAim[i] = registerBlade
+        end
+    end
+    AimIndex = AimIndex + 1
+    return CachedAim[k .. tostring(AimIndex)]
+end
+
+function getRegisterBladeHit()
+    local WeaponName = getWeaponName()
+    if not WeaponName then
+        return nil
+    end
+    return getCacheAim(CombatUtils:GetPureWeaponName(WeaponName) .. "-basic")
+end
+function getAllBladeHits(Sizes)
+    local Hits = {}
+    local Client = game.Players.LocalPlayer
+    local Enemies = game:GetService("Workspace").Enemies:GetChildren()
+    for i = 1, #Enemies do
+        local v = Enemies[i]
+        local Human = v:FindFirstChildOfClass("Humanoid")
+        if Human and Human.RootPart and Human.Health > 0 and Client:DistanceFromCharacter(Human.RootPart.Position) <
+            Sizes + 5 and (Human.RootPart.Position - Client.Character.HumanoidRootPart.Position).Magnitude <= 300 then
+            table.insert(Hits, v)
+        end
+    end
+    if #Hits > 0 then
+        local FirstHit = Hits[1].Head
+        local MulitHit = {}
+        if #Hits > 1 and CombatMode == "MULIT" then
+            for Index, Hit in pairs(Hits) do
+                if Hit ~= FirstHit then
+                    for i, Hitbox in pairs(Hitboxes) do
+                        local Box = Hit:FindFirstChild(Hitbox)
+                        if Box then
+                            table.insert(MulitHit, {Hit, Box})
+                        end
+                    end
+                end
+            end
+        end
+        return FirstHit, MulitHit
+    end
+    return nil, {}
+end
+function getAllBladeHitsPlayers(Sizes)
+    local Hits = {}
+    local Client = game.Players.LocalPlayer
+    local Characters = game:GetService("Workspace").Characters:GetChildren()
+    for i = 1, #Characters do
+        local v = Characters[i]
+        local Human = v:FindFirstChildOfClass("Humanoid")
+        if v.Name ~= game.Players.LocalPlayer.Name and Human and Human.RootPart and Human.Health > 0 and
+            Client:DistanceFromCharacter(Human.RootPart.Position) < Sizes + 5 then
+            table.insert(Hits, v)
+        end
+    end
+    if #Hits > 0 then
+        local FirstHit = Hits[1].HumanoidRootPart
+        local MulitHit = {}
+        if #Hits > 1 and CombatMode == "MULIT" then
+            for Index, Hit in pairs(Hits) do
+                if Hit ~= FirstHit then
+                    for i, Hitbox in pairs(Hitboxes) do
+                        local Box = Hit:FindFirstChild(Hitbox)
+                        if Box then
+                            table.insert(MulitHit, {Hit, Box})
+                        end
+                    end
+                end
+            end
+        end
+        return FirstHit, MulitHit
+    end
+    return nil, {}
+end
+function AttackFunction()
+    local bladehit, mulithit = getAllBladeHits(120)
+    local WeaponName = getWeaponName(true)
+    if bladehit and WeaponName then
+        local registerBlade = getRegisterBladeHit()
+        if registerBlade then
+            game:GetService("ReplicatedStorage"):WaitForChild("Modules"):WaitForChild("Net"):WaitForChild(
+                "RE/RegisterAttack"):FireServer(registerBlade)
+            if gameFlags.COMBAT_REMOTE_THREAD and RegisterHitRemoteThread then
+                coroutine.resume(RegisterHitRemoteThread, bladehit, mulithit);
+            else
+                RegisterHitEvent:FireServer(bladehit, mulithit)
+            end
+        end
+    end
+end
+function AttackPlayerFunction()
+    local bladehit, mulithit = getAllBladeHitsPlayers(120)
+    local WeaponName = getWeaponName(true)
+    if bladehit then
+        local registerBlade = getRegisterBladeHit()
+        if registerBlade then
+            game:GetService("ReplicatedStorage"):WaitForChild("Modules"):WaitForChild("Net"):WaitForChild(
+                "RE/RegisterAttack"):FireServer(registerBlade)
+            if gameFlags.COMBAT_REMOTE_THREAD and RegisterHitRemoteThread then
+                coroutine.resume(RegisterHitRemoteThread, bladehit, mulithit);
+            else
+                RegisterHitEvent:FireServer(bladehit, mulithit)
+            end
+        end
+    end
+end
+task.spawn(function()
+    while wait(.1) do
+        pcall(function()
+            if Start_Attack then
+                AttackFunction()
+            end
+        end)
+    end
+end)
+-- ======== EquipWeapon
+function EquipWeapon(ToolSe)
+    pcall(function()
+        if game.Players.LocalPlayer.Backpack:FindFirstChild(ToolSe) and
+            game.Players.LocalPlayer.Character:FindFirstChild('Humanoid') then
+            local tool = game.Players.LocalPlayer.Backpack:FindFirstChild(ToolSe)
+            wait()
+            game.Players.LocalPlayer.Character.Humanoid:EquipTool(tool)
+        end
+    end)
+end
+-- ======== TP
+function TP(Pos)
+    local xps = game.Players.LocalPlayer and game.Players.LocalPlayer.Character.HumanoidRootPart and
+                    game.Players.LocalPlayer.Character.HumanoidRootPart.Position
+    if xps then
+        local Distance = (Pos.Position - xps).Magnitude
+        pcall(function()
+            Tween = game:GetService("TweenService"):Create(game.Players.LocalPlayer.Character.HumanoidRootPart,
+                TweenInfo.new(Distance / 350, Enum.EasingStyle.Linear), {
+                    CFrame = Pos
+                })
+            Tween:Play()
+            if Distance <= 250 then
+                Tween:Cancel()
+                game.Players.LocalPlayer.Character.HumanoidRootPart.CFrame = Pos
+            end
+        end)
+    end
+end
+-- ============= Check Item
+function Check_Item(vu)
+    for i, v in pairs(game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("getInventoryWeapons")) do
+        if v["Name"] == vu then
+            return true
+        end
+    end
+    return false
+end
+function Check_Material(matname)
+    for i, v in pairs(game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("getInventory")) do
+        if type(v) == "table" then
+            if v.Type == "Material" then
+                if v.Name == matname then
+                    return v.Count
+                end
+            end
+        end
+    end
+    return 0
+end
+-- ============= List Information
+local HttpService = game:GetService("HttpService")
+
+local function Get_API(Value)
+    -- 🔗 URL จาก Google Apps Script ของคุณ
+    local url =
+        "https://script.google.com/macros/s/AKfycbwX1lz6pUmGQTFw5PZ2haKqAZL_nq-dw2U-yrSYW6dY-7tmPc9O91gUhpSRXHzuNlHn/exec"
+
+    local success, response = pcall(function()
+        return game:HttpGet(url)
+    end)
+
+    if not success then
+        warn("❌ ดึงข้อมูลไม่สำเร็จ:", response)
+        return {}
+    end
+
+    local ok, data = pcall(function()
+        return HttpService:JSONDecode(response)
+    end)
+
+    if not ok then
+        warn("❌ แปลง JSON ไม่สำเร็จ:", data)
+        print("Raw:", response)
+        return {}
+    end
+
+    local lower = string.lower(Value)
+
+    -- ✅ Mirage
+    if lower == "mirage" and typeof(data["Mirage"]) == "table" then
+        print("🌌 Mirage JobIds:")
+        for i = #data["Mirage"], 1, -1 do
+            print("   ", data["Mirage"][i])
+        end
+        return data["Mirage"]
+    end
+
+    -- ✅ Fullmoon
+    if lower == "fullmoon" and typeof(data["Fullmoon"]) == "table" then
+        print("🌕 Fullmoon JobIds:")
+        for i = #data["Fullmoon"], 1, -1 do
+            print("   ", data["Fullmoon"][i])
+        end
+        return data["Fullmoon"]
+    end
+
+    -- ✅ Boss เฉพาะ Dough King / rip_indra True Form
+    local bossList = {"Dough King", "rip_indra True Form"}
+    for _, bossName in ipairs(bossList) do
+        if string.lower(bossName) == lower and typeof(data[bossName]) == "table" then
+            print("👑 Boss:", bossName)
+            for i = #data[bossName], 1, -1 do
+                print("   ", data[bossName][i])
+            end
+            return data[bossName]
+        end
+    end
+
+    warn("⚠️ ไม่พบข้อมูลสำหรับ:", Value)
+    return {}
+end
+
+-- local mirage = Get_API("Mirage")
+-- local fullmoon = Get_API("Fullmoon")
+-- local allBoss = Get_API("Boss")
+-- local cursed = Get_API("Cursed Captain")
+-- local grey = Get_API("Greybeard")
+-- ============= Save Setting 
+Save_Setting = tostring(game.Players.LocalPlayer.Name)
+Setting_mem = {}
+
+getgenv()["JsonEncode"] = function(msg)
+    return game:GetService("HttpService"):JSONEncode(msg)
+end
+getgenv()["JsonDecode"] = function(msg)
+    return game:GetService("HttpService"):JSONDecode(msg)
+end
+getgenv()["Check_Setting"] = function(Name)
+    if not isfolder("V4 BF") then
+        makefolder("V4 BF")
+    end
+    if not isfile("V4 BF/" .. Name .. ".json") then
+        writefile("V4 BF/" .. Name .. ".json", JsonEncode(Setting_mem))
+    end
+end
+
+getgenv()["Get_Setting"] = function(Name)
+    if isfolder("V4 BF") and isfile("V4 BF/" .. Name .. ".json") then
+        local success, data = pcall(function()
+            return JsonDecode(readfile("V4 BF/" .. Name .. ".json"))
+        end)
+        if success and data ~= nil then
+            return data
+        else
+            warn("ไฟล์ JSON พัง → เขียนใหม่")
+            writefile("V4 BF/" .. Name .. ".json", JsonEncode({}))
+            return {}
+        end
+    else
+        Check_Setting(Name)
+        return {}
+    end
+end
+
+getgenv()["Update_Setting"] = function(Name)
+    print(Name)
+    if isfolder("V4 BF") and isfile("V4 BF/" .. Name .. ".json") then
+        writefile("V4 BF/" .. Name .. ".json", JsonEncode(Setting_mem))
+    else
+        Check_Setting(Name)
+    end
+end
+
+Check_Setting(Save_Setting)
+Setting_mem = Get_Setting(Save_Setting)
+-- Aimbot 
+spawn(function()
+    local gg = getrawmetatable(game)
+    local old = gg.__namecall
+    setreadonly(gg, false)
+    gg.__namecall = newcclosure(function(...)
+        local method = getnamecallmethod()
+        local args = {...}
+        if tostring(method) == "FireServer" and PositionSkillMasteryDevilFruit ~= nil then
+            if Aimbot_On then
+                if tostring(args[1]) == "RemoteEvent" then
+                    if tostring(args[2]) ~= "true" and tostring(args[2]) ~= "false" then
+                        if tostring(args[2]) ~= "true" and tostring(args[2]) ~= "false" then
+                            args[2] = PositionSkillMasteryDevilFruit
+                            return old(unpack(args))
+                        end
+                    end
+                end
+            end
+        end
+        return old(...)
+    end)
+end)
+-- ====== Status
+if New_World or Three_World then
+    if game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("Alchemist", "3") == -2 then -- V1
+        Evo_Race_V1_H = true
+    end
+end
+if New_World or Three_World then
+    if game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("Wenlocktoad", "1") ~= nil and Evo_Race_V1_H then -- V2
+        Evo_Race_V2_H = true
+    end
+end
+if New_World or Three_World then
+    if game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("Wenlocktoad", "3") == -2 then
+        Evo_Race_V3_H = true
+    end
+end
+
+if Evo_Race_V3_H then
+    if tostring(
+        (table.pack(game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("UpgradeRace", "Check"))[2])) ==
+        'nil' then
+    else
+        Evo_Race_V4_H = true
+    end
+end
+if Evo_Race_V4_H then
+    Race_Int = 'V4 T' ..
+                   tostring(
+            (table.pack(game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("UpgradeRace", "Check"))[2]))
+elseif Evo_Race_V3_H then
+    Race_Int = 'V3'
+elseif Evo_Race_V2_H then
+    Race_Int = 'V2'
+elseif Evo_Race_V1_H then
+    Race_Int = 'V1'
+else
+    Race_Int = 'V0'
+end
+-- TPBoat
+function TPBoat(p, boat, speedx, stop)
+    if stop == nil then
+        stop = false
+    end
+    local Distance = (p.Position - boat.Position).Magnitude
+    Speed = speedx
+    TweenP = game:GetService("TweenService"):Create(boat, TweenInfo.new(Distance / Speed, Enum.EasingStyle.Linear), {
+        CFrame = p
+    })
+    if stop == true then
+        TweenP:Cancel()
+    else
+        TweenP:Play()
+    end
+end
+-- ============= BodyVelocity
+spawn(function()
+    pcall(function()
+        game:GetService("RunService").Stepped:Connect(function()
+            if boat_on then
+                if game:GetService("Players").LocalPlayer.Character.HumanoidRootPart:FindFirstChild("BodyVelocity") then
+                    game:GetService("Players").LocalPlayer.Character.HumanoidRootPart:FindFirstChild("BodyVelocity")
+                        :Destroy()
+                end
+            elseif FLY then
+                if not game:GetService("Players").LocalPlayer.Character.HumanoidRootPart:FindFirstChild("BodyVelocity") then
+                    local BodyVelocity = Instance.new("BodyVelocity")
+                    BodyVelocity.Name = "BodyVelocity"
+                    BodyVelocity.Parent = game:GetService("Players").LocalPlayer.Character.HumanoidRootPart
+                    BodyVelocity.MaxForce = Vector3.new(10000, 10000, 10000)
+                    BodyVelocity.Velocity = Vector3.new(0, 0, 0)
+                end
+                if game.Players.LocalPlayer.Character.Humanoid.Sit == true then
+                    game.Players.LocalPlayer.Character.Humanoid.Sit = false
+                end
+                if not Attack_Fa then
+                    for _, v in pairs(game.Players.LocalPlayer.Character:GetDescendants()) do
+                        if v:IsA("BasePart") then
+                            v.CanCollide = false
+                        end
+                    end
+                else
+                    wait(.1)
+                end
+                -- elseif game:GetService("Players").LocalPlayer.Character.HumanoidRootPart:FindFirstChild("BodyVelocity") then
+                --     game:GetService("Players").LocalPlayer.Character.HumanoidRootPart:FindFirstChild("BodyVelocity")
+                --         :Destroy()
+            end
+        end)
+    end)
+end)
+-- ============= Loop 
+local TeleportService = game:GetService("TeleportService")
+local HttpService = game:GetService("HttpService")
+
+local hoping = false
+TeleportService.TeleportInitFailed:Connect(function(_, teleportResult, errorMessage)
+    if tostring(teleportResult) ~= "Enum.TeleportResult.IsTeleporting" then
+        warn("⚠️ [Teleport Failed]:", teleportResult, errorMessage)
+        hoping = true
+    end
+end)
+local list_server_low = {}
+if New_World or Three_World then
+    if game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("Alchemist", "3") == -2 then -- V1
+        Evo_Race_V1_H = true
+    end
+end
+if New_World or Three_World then
+    if game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("Wenlocktoad", "1") ~= nil and Evo_Race_V1_H then -- V2
+        Evo_Race_V2_H = true
+    end
+end
+if New_World or Three_World then
+    if game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("Wenlocktoad", "3") == -2 then
+        Evo_Race_V3_H = true
+    end
+end
+
+if Evo_Race_V3_H then
+    if tostring(
+        (table.pack(game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("UpgradeRace", "Check"))[2])) ==
+        'nil' then
+    else
+        Evo_Race_V4_H = true
+    end
+end
+if Evo_Race_V4_H then
+    Race_Int = 'V4 T' ..
+                   tostring(
+            (table.pack(game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("UpgradeRace", "Check"))[2]))
+elseif Evo_Race_V3_H then
+    Race_Int = 'V3'
+elseif Evo_Race_V2_H then
+    Race_Int = 'V2'
+elseif Evo_Race_V1_H then
+    Race_Int = 'V1'
+else
+    Race_Int = 'V0'
+end
+local Monster
+local function GetMonster(vu, position_point)
+    if not position_point then
+        position_point = game.Players.LocalPlayer.Character.HumanoidRootPart.CFrame
+    end
+    pcall(function()
+        for i, v in pairs(game.Workspace.Enemies:GetChildren()) do
+            if v:IsA('Model') and v:FindFirstChild('Humanoid') and v.Humanoid.Health > 0 and
+                (v.HumanoidRootPart.Position - position_point.Position).Magnitude <= vu then
+                Monster = v
+                return
+            end
+        end
+    end)
+end
+local function Farm_Cake()
+    if game.Workspace.Enemies:FindFirstChild('Cake Prince') or game.ReplicatedStorage:FindFirstChild('Cake Prince') then
+        if game.Workspace.Enemies:FindFirstChild('Cake Prince') then
+            for i, v in pairs(game.Workspace.Enemies:GetChildren()) do
+                if v.Name == 'Cake Prince' and v.Humanoid.Health > 0 then
+                    repeat
+                        wait(.1)
+                        if not game.Players.LocalPlayer.Character:FindFirstChild("HasBuso") then
+                            game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("Buso")
+                        end
+                        TP(v.HumanoidRootPart.CFrame * CFrame.new(0, 30, 0), true)
+                        EquipWeapon(Weapon)
+                        AttackFunction()
+                    until not v.Parent or v.Humanoid.Health <= 0
+                end
+            end
+        elseif game.ReplicatedStorage:FindFirstChild('Cake Prince') then
+            TP(game.ReplicatedStorage:FindFirstChild('Cake Prince').HumanoidRootPart.CFrame * CFrame.new(0, 30, 0))
+        end
+    elseif (game.Players.LocalPlayer.Character.HumanoidRootPart.Position -
+        Vector3.new(5270.251953125, 1004.005615234375, 23.6695556640625)).Magnitude >= 2000 then
+        repeat
+            wait()
+            TP(CFrame.new(5270.251953125, 1004.005615234375, 23.6695556640625))
+        until (game.Players.LocalPlayer.Character.HumanoidRootPart.Position -
+            Vector3.new(5270.251953125, 1004.005615234375, 23.6695556640625)).Magnitude <= 3
+    elseif (game.Players.LocalPlayer.Character.HumanoidRootPart.Position -
+        Vector3.new(5270.251953125, 1004.005615234375, 23.6695556640625)).Magnitude < 2000 then
+        Monster = nil
+        for i = 1500, 0, -300 do
+            GetMonster(i, CFrame.new(5270.251953125, 1004.005615234375, 23.6695556640625))
+        end
+        if Monster ~= nil and Monster.Humanoid.Health > 0 then
+            local time_check = tick()
+            PosMon_X = Monster.HumanoidRootPart.CFrame
+            StatrMagnet = true
+            repeat
+                wait()
+                if tick() - time_check >= 4 then
+                    Monster.Humanoid.Health = 0
+                end
+                if not game.Players.LocalPlayer.Character:FindFirstChild("HasBuso") then
+                    game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("Buso")
+                end
+                TP(Monster.HumanoidRootPart.CFrame * CFrame.new(0, 30, 0))
+                EquipWeapon(Weapon)
+                AttackFunction()
+            until not Monster.Parent or Monster.Humanoid.Health <= 0
+            StatrMagnet = false
+        elseif Monster == nil then
+            for i = 1500, 0, -300 do
+                GetMonster(i, CFrame.new(5270.251953125, 1004.005615234375, 23.6695556640625))
+            end
+            if Monster == nil then
+                TP(xp)
+            end
+        end
+        local Lp = tostring(string.match(tostring(
+            game.ReplicatedStorage.Remotes.CommF_:InvokeServer("CakePrinceSpawner")), "%d+"))
+        if Lp == 'nil' or Lp == nil then
+            game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("CakePrinceSpawner", true)
+        end
+    end
+end
+FLY = true
+local time_old = tick()
+for i, v in pairs(game.Players.LocalPlayer.Backpack:GetChildren()) do
+    if v:IsA('Tool') and tostring(v.ToolTip) == 'Melee' then
+        Weapon = v.Name
+    end
+end
+if not _G.Change_Race then
+    _G.Change_Race = tostring(game.Players.LocalPlayer.Data.Race.Value)
+end
+if _G.Color_Open == tostring(game.Players.LocalPlayer.Name) then
+    while wait(0.5) do
+        -- pcall(function()
+        if not Open_Color_H then
+            local function TP(Pos)
+                local xps = game.Players.LocalPlayer and game.Players.LocalPlayer.Character.HumanoidRootPart and
+                                game.Players.LocalPlayer.Character.HumanoidRootPart.Position
+                if xps then
+                    if bi_zaz then
+                        bi_zaz = false
+                    end
+                    local Distance = (Pos.Position - xps).Magnitude
+                    pcall(function()
+                        Tween = game:GetService("TweenService"):Create(
+                            game.Players.LocalPlayer.Character.HumanoidRootPart,
+                            TweenInfo.new(Distance / 320, Enum.EasingStyle.Linear), {
+                                CFrame = Pos
+                            })
+                        Tween:Play()
+                        if Distance <= 290 then
+                            Tween:Cancel()
+                            game.Players.LocalPlayer.Character.HumanoidRootPart.CFrame = Pos
+                        end
+                    end)
+                end
+            end
+            repeat
+                wait(0.1)
+                TP(CFrame.new(-5116.11475, 314.53772, -2966.45215, -0.256015986, -4.60879832e-08, 0.96667254,
+                    -1.91044602e-08, 1, 4.26172626e-08, -0.96667254, -7.55705631e-09, -0.256015986))
+            until (Vector3.new(-5116.11475, 314.53772, -2966.45215) -
+                game.Players.LocalPlayer.Character.HumanoidRootPart.Position).Magnitude <= 10
+
+            for i, v in pairs(workspace.Map["Boat Castle"].Summoner.Circle:GetChildren()) do
+                if v.Name == 'Part' and tostring(v.BrickColor) == 'Oyster' and tostring(v.Part.BrickColor) ==
+                    'Lime green' then
+                    Oyster_H = true
+                end
+            end
+            for i, v in pairs(game.workspace.Map["Boat Castle"].Summoner.Circle:GetChildren()) do
+                if v.Name == 'Part' and tostring(v.BrickColor) == 'Hot pink' and tostring(v.Part.BrickColor) ==
+                    'Lime green' then
+                    Hot_pink_H = true
+                end
+            end
+            for i, v in pairs(game.workspace.Map["Boat Castle"].Summoner.Circle:GetChildren()) do
+                if v.Name == 'Part' and tostring(v.BrickColor) == 'Really red' and tostring(v.Part.BrickColor) ==
+                    'Lime green' then
+                    Really_red_H = true
+                end
+            end
+            if not Oyster_H then
+                for i, v in pairs(workspace.Map["Boat Castle"].Summoner.Circle:GetChildren()) do
+                    if v.Name == 'Part' and tostring(v.BrickColor) == 'Oyster' then
+                        if tostring(v.Part.BrickColor) ~= 'Lime green' then
+                            local args = {
+                                [1] = {
+                                    ["StorageName"] = "Snow White",
+                                    ["Type"] = "AuraSkin",
+                                    ["Context"] = "Equip"
+                                }
+                            }
+
+                            game:GetService("ReplicatedStorage").Modules.Net:FindFirstChild("RF/FruitCustomizerRF")
+                                :InvokeServer(unpack(args))
+
+                            wait(1)
+                            repeat
+                                wait()
+                                if not game.Players.LocalPlayer.Character:FindFirstChild("HasBuso") then
+                                    game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("Buso")
+                                end
+                                game.Players.LocalPlayer.Character.HumanoidRootPart.CFrame = v.Part.CFrame
+                            until tostring(v.Part.BrickColor) == 'Lime green'
+                            Oyster_H = true
+                        end
+                    end
+                end
+            end
+            if not Really_red_H then
+                for i, v in pairs(workspace.Map["Boat Castle"].Summoner.Circle:GetChildren()) do
+                    if v.Name == 'Part' and tostring(v.BrickColor) == 'Really red' then
+                        if tostring(v.Part.BrickColor) ~= 'Lime green' then
+                            local args = {
+                                [1] = {
+                                    ["StorageName"] = "Pure Red",
+                                    ["Type"] = "AuraSkin",
+                                    ["Context"] = "Equip"
+                                }
+                            }
+
+                            game:GetService("ReplicatedStorage").Modules.Net:FindFirstChild("RF/FruitCustomizerRF")
+                                :InvokeServer(unpack(args))
+                            wait(1)
+                            repeat
+                                wait()
+                                if not game.Players.LocalPlayer.Character:FindFirstChild("HasBuso") then
+                                    game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("Buso")
+                                end
+                                game.Players.LocalPlayer.Character.HumanoidRootPart.CFrame = v.Part.CFrame
+                            until tostring(v.Part.BrickColor) == 'Lime green'
+                            Really_red_H = true
+                        end
+                    end
+                end
+            end
+            if not Hot_pink_H then
+                for i, v in pairs(workspace.Map["Boat Castle"].Summoner.Circle:GetChildren()) do
+                    if v.Name == 'Part' and tostring(v.BrickColor) == 'Hot pink' then
+                        if tostring(v.Part.BrickColor) ~= 'Lime green' then
+                            local args = {
+                                [1] = {
+                                    ["StorageName"] = "Winter Sky",
+                                    ["Type"] = "AuraSkin",
+                                    ["Context"] = "Equip"
+                                }
+                            }
+
+                            game:GetService("ReplicatedStorage").Modules.Net:FindFirstChild("RF/FruitCustomizerRF")
+                                :InvokeServer(unpack(args))
+                            wait(1)
+                            repeat
+                                wait()
+                                if not game.Players.LocalPlayer.Character:FindFirstChild("HasBuso") then
+                                    game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("Buso")
+                                end
+                                game.Players.LocalPlayer.Character.HumanoidRootPart.CFrame = v.Part.CFrame
+                            until tostring(v.Part.BrickColor) == 'Lime green'
+                            Hot_pink_H = true
+                        end
+                    end
+                end
+            end
+            if Hot_pink_H and Really_red_H and Oyster_H then
+                Open_Color_H = true
+            end
+        else
+            if not Setting_mem['Old JobID'] or #Setting_mem['Old JobID'] >= 30 then
+                Setting_mem['Old JobID'] = {}
+                Update_Setting(Save_Setting)
+            end
+            if not ijoireger then
+                ijoireger = true
+                table.insert(Setting_mem['Old JobID'], tostring(game.JobId))
+                Update_Setting(Save_Setting)
+            end
+
+            local HttpService = game:GetService("HttpService")
+
+            -- 📂 ฟังก์ชันโหลดข้อมูลจาก All_Server_God.json
+            function LoadAllServerGod()
+                local fileName = "All_Server_God.json"
+
+                -- ถ้าไม่มีไฟล์ ให้สร้างใหม่พร้อมเนื้อหาว่าง
+                if not isfile(fileName) then
+                    writefile(fileName, HttpService:JSONEncode({}))
+                    warn("⚠️ สร้างไฟล์ใหม่:", fileName)
+                    return {}
+                end
+
+                -- พยายามอ่านและแปลง JSON
+                local success, data = pcall(function()
+                    return HttpService:JSONDecode(readfile(fileName))
+                end)
+
+                if success and typeof(data) == "table" then
+                    print("✅ โหลด All_Server_God สำเร็จ จำนวน:", #data)
+                    return data
+                else
+                    warn(
+                        "⚠️ อ่านไฟล์ไม่สำเร็จ หรือข้อมูลไม่ถูกต้อง → รีเซ็ตไฟล์")
+                    writefile(fileName, HttpService:JSONEncode({}))
+                    return {}
+                end
+            end
+            local all_server = LoadAllServerGod()
+            if all_server then
+                for i, jobId in ipairs(all_server) do
+                    print("[" .. i .. "]", jobId)
+                end
+                for i, v in pairs(all_server) do
+                    if not table.find(Setting_mem['Old JobID'], tostring(v)) then
+                        hoping = false
+                        local TeleportService = game:GetService("TeleportService")
+                        TeleportService:TeleportToPlaceInstance(tostring(game.PlaceId), tostring(v),
+                            game.Players.LocalPlayer)
+                        local time_add = tick()
+                        repeat
+                            wait(0.5)
+                        until hoping or tick() - time_add >= 5
+                    end
+
+                end
+            end
+            wait(10)
+        end
+        -- end)
+    end
+end
+local basic_race = {'Human', 'Fishman', 'Mink', 'Skypia'}
+if table.find(basic_race, _G.Change_Race) then
+    if tostring(game.Players.LocalPlayer.Data.Race.Value) ~= _G.Change_Race then
+        repeat
+            local args = {
+                [1] = "BlackbeardReward",
+                [2] = "Reroll",
+                [3] = "2"
+            }
+
+            game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer(unpack(args))
+            wait(3)
+        until tostring(game.Players.LocalPlayer.Data.Race.Value) == _G.Change_Race
+    end
+elseif _G.Change_Race == 'Ghoul' and tostring(game.Players.LocalPlayer.Data.Race.Value) ~= _G.Change_Race then
+    repeat
+        wait()
+    until game:IsLoaded() and game.Players.LocalPlayer
+    getgenv().Config = {
+        ["Auto Fire Shoot Heart Leviathan"] = false,
+        ["Noti Profile"] = false,
+        ["Attack Darkbeard"] = false,
+        ["Tween Until Have Sea Event"] = false,
+        ["No Frog"] = false,
+        ["Auto Dodge Skill Mobs"] = false,
+        ["Ignore Craft Volcanic Magnet"] = false,
+        ["Auto Trade Azure Ember"] = false,
+        ["Auto Turn On V3"] = false,
+        ["Tween Boat To Frozen Dimension"] = false,
+        ["Change Size Reel"] = false,
+        ["Auto Aimbot Gun"] = false,
+        ["Distance Teleport Y"] = 800,
+        ["Auto New World"] = false,
+        ["Drive Boat To Hydra"] = false,
+        ["Auto Summon Soul Ember"] = false,
+        ["Summon Dough King"] = false,
+        ["Auto Store Fruit"] = false,
+        ["Auto Start Leviathan"] = false,
+        ["Auto Sell Fishing"] = false,
+        ["ESP Berry"] = false,
+        ["Account Pick Slot Raid"] = false,
+        ["Auto Multi Raid"] = false,
+        ["Change WalkSpeed"] = false,
+        ["ESP Island"] = false,
+        ["Multi Find Leviathan"] = false,
+        ["Auto Fishing"] = false,
+        ["Auto Quest Dojo Trainer"] = false,
+        ["Auto Buy Boat Beast Hunter"] = false,
+        ["Ignore Craft Volcanic Magnet Draco"] = false,
+        ["Auto Destroy IDK"] = false,
+        ["Select Skills Sword"] = {
+            ["Z"] = true,
+            ["X"] = true
+        },
+        ["Auto Get Rainbow Haki"] = false,
+        ["Boost Fps"] = false,
+        ["Random Devil Fruit [ Summer Token ]"] = false,
+        ["Auto Spawn Kitsune Island"] = false,
+        ["Fully Trial Draco"] = false,
+        ["Auto Trial"] = false,
+        ["Account Buy Chip"] = false,
+        ["Auto Get Cyborg Hop Collect Chest"] = false,
+        ["Kill players When complete Trial"] = false,
+        ["Hop Server Elite Hunter"] = false,
+        ["Auto Upgrade Sword Inventory"] = false,
+        ["Random Devil Fruit"] = false,
+        ["Use skill fast dont hold"] = false,
+        ["Auto Collect Bone"] = false,
+        ["Auto Aimbot"] = false,
+        ["Use Click M1 Fruit For Sea Event"] = false,
+        ["Teleport Y"] = false,
+        ["Values Azure Ember"] = 10,
+        ["Auto Turn On V4"] = false,
+        ["Hop Find Katakuri"] = false,
+        ["Input WalkSpeed"] = 200,
+        ["Use Dragonstorm For Sea Event"] = false,
+        ["Auto Touch Pad Haki"] = false,
+        ["Hop Server Kitsune Island"] = false,
+        ["Attack Dough King"] = false,
+        ["Spam Join"] = false,
+        ["Auto Farm Mastery 600 Sword In Inventory"] = false,
+        ["Summon Soul Reaper"] = false,
+        ["Auto Yama"] = false,
+        ["Auto Get Ghoul"] = true,
+        ["Hop Server Find Boss"] = false,
+        ["Summon Darkbeard"] = false,
+        ["Webhook Find Mirage"] = false,
+        ["Auto Finish Train Quest"] = false,
+        ["Webhook Find Leviathan"] = false,
+        ["Select Skills Gun"] = {
+            ["Z"] = true,
+            ["X"] = true
+        },
+        ["Auto Summon Rip Indra"] = false,
+        ["Tween Safe if have Items"] = false,
+        ["Auto Turn On Observation"] = false,
+        ["Auto Tween To Event Fishing Spot"] = false,
+        ["Auto Trade Bone"] = false,
+        ["Auto Chest Hop"] = false,
+        ["Auto Get Cyborg"] = false,
+        ["Select Skills Melee"] = {
+            ["X"] = true,
+            ["C"] = true,
+            ["Z"] = true
+        },
+        ["Auto Turn On V3 Near Door"] = false,
+        ["Fully Event Prehistoric Island"] = false,
+        ["Hop Sever Raid"] = false,
+        ["Auto Find Mirage"] = false,
+        ["Auto Collect Berry"] = false,
+        ["Auto Open Chest"] = false,
+        ["Auto Factory"] = false,
+        ["Attack Multi Segments Leviathan"] = false,
+        ["Auto Change Dragonstorm With Skull Guitar"] = false,
+        ["Auto Farm Mastery 600 Melees"] = false,
+        ["White Screen"] = false,
+        ["Auto Saber"] = false,
+        ["Auto Yoru Mini (Hop Server)"] = false,
+        ["Change Speed Boat"] = false,
+        ["Auto Yoru Mini"] = false,
+        ["Auto Buy Chip and Attack Law"] = false,
+        ["Kill Aura Mob Halloween"] = false,
+        ["Kill Boss"] = false,
+        ["Auto Turn On Buso"] = true,
+        ["Ignore Attack Katakuri"] = false,
+        ["Farm Observation [ Hop Server ]"] = false,
+        ["Distance Farm Aura"] = 300,
+        ["Auto UP Observation V2"] = false,
+        ["Attack No Animation "] = true,
+        ["Auto Soul Guitar"] = false,
+        ["Hop Find Darkbeard"] = false,
+        ["Kill Mob"] = false,
+        ["Auto Third World"] = false,
+        ["Auto TTK"] = false,
+        ["Value Damage Multi Segments"] = 30000,
+        ["Auto Buy Haki Color"] = false,
+        ["Auto Attack Leviathan"] = false,
+        ["Auto Buy Spy"] = false,
+        ["Teleport To Fruit [ Hop Server ]"] = false,
+        ["Farm Mastery"] = false,
+        ["Use Click M1 Fruit Leviathan"] = false,
+        ["Multi Trial"] = false,
+        ["Auto Load Script"] = false,
+        ["Use Click M1 Skull Guitar Leviathan"] = false,
+        ["Auto Collect Egg"] = false,
+        ["% Health Player"] = 40,
+        ["Auto Event Halloween"] = false,
+        ["Auto Pull Lever"] = false,
+        ["Teleport Player"] = false,
+        ["Use Your Boat Beast Hunter"] = false,
+        ["Hop Server [Trial Or Pull Lever]"] = false,
+        ["Auto Gacha Event Halloween"] = false,
+        ["Select Skills Blox Fruit"] = {
+            ["X"] = true,
+            ["C"] = true,
+            ["Z"] = true,
+            ["V"] = true,
+            ["F"] = true
+        },
+        ["Get Fruit In Inventory Low Beli"] = false,
+        ["Auto Get Fully Cyborg"] = false,
+        ["Teleport Frozen Dimension"] = false,
+        ["Auto Upgrade Race V2-V3"] = true,
+        ["Black Screen"] = false,
+        ["Auto Finish Train Draco Quest"] = false,
+        ["Auto Repair Ur Ship"] = false,
+        ["Auto Quest [Katakuri/Bone/Tyrant]"] = false,
+        ["Hop Server Get Ghoul"] = true,
+        ["Attack Soul Reaper"] = false,
+        ["Auto Dodge Skill Terrorshark"] = false,
+        ["Stack Train With Trial Race"] = false,
+        ["Auto rejoin Disconnect"] = false,
+        ["Auto Click"] = false,
+        ["Auto Awake Fruit"] = false,
+        ["Bring Mob"] = true,
+        ["Drive Boat To Tiki"] = false,
+        ["Farm Observation"] = false,
+        ["Hop Find Berry"] = false,
+        ["Change JumpPower"] = false,
+        ["Auto Find Leviathan"] = false,
+        ["Farm Material"] = false,
+        ["Start Farm"] = false,
+        ["Auto Dodge Skill Seabeast"] = false,
+        ["Will Back When over 10km"] = false,
+        ["Value Speed Fly Boat"] = 3,
+        ["Webhook Destroy IDK"] = false,
+        ["Speed Boat Auto Drive"] = 300,
+        ["Auto Choose Gears"] = false,
+        ["Auto Pirate Raid"] = false,
+        ["Time Hop Server"] = 10,
+        ["Auto Buy Gear Draco"] = false,
+        ["Auto Collect Soul Ember"] = false,
+        ["Auto Slap Battle"] = false,
+        ["Auto Elite Hunter"] = false,
+        ["Teleport To Kitsune Island"] = false,
+        ["ESP Fruit"] = false,
+        ["Auto Attack All Mob and Boss"] = false,
+        ["Health %"] = 40,
+        ["Teleport Acient Clock"] = false,
+        ["Use Portal Teleport"] = false,
+        ["Attack Rip Indra"] = false,
+        ["Fly Boat"] = false,
+        ["Ping Discord"] = false,
+        ["Value Collect Chest to Hop"] = 20,
+        ["Auto Trial Draco"] = false,
+        ["Ignore Collect Bone"] = false,
+        ["Reset Character Buy Boat"] = false,
+        ["Auto Sea Event"] = false,
+        ["Auto Stats"] = false,
+        ["Teleport Boat Other CFrame if Rough Sea"] = false,
+        ["Webhook Store Fruit"] = false,
+        ["Teleport To Fruit"] = false,
+        ["Auto Sea Event With Friend"] = false,
+        ["Auto Event Prehistoric Island"] = false,
+        ["Kill All Boss"] = false,
+        ["Auto Chest"] = false,
+        ["Just Use Skill when Player Active Ken"] = false,
+        ["Auto Buy Legendary Sword"] = false,
+        ["Kill Aura With DragonStorm"] = false,
+        ["Hop Server [ Haki color or Legendary Sword]"] = false,
+        ["Auto Craft Item Shark Anchor"] = false,
+        ["Use Skill when Kill Player"] = false,
+        ["Auto Raid"] = false,
+        ["Auto Quest Dragon Hunter"] = false,
+        ["Auto Tushita"] = false,
+        ["Remove Notifications"] = false,
+        ["Use Click M1 Skull Guitar For Sea Event"] = false,
+        ["Auto CDK"] = false,
+        ["Auto Crafting Volcanic Magnet"] = false,
+        ["Auto Upgrade Gun Inventory"] = false,
+        ["Buy Blox Fruit Sniper Shop"] = false,
+        ["Auto Reset Character"] = false,
+        ["Auto Find Prehistoric Island"] = false,
+        ["Auto Buy Gear"] = false,
+        ["ESP Player"] = false,
+        ["Input JumpPower"] = 200,
+        ["Hop Find Dough King"] = false,
+        ["Walk On Water "] = true,
+        ["Webhook Find Prehistoric Island"] = false,
+        ["Auto Upgrade Race V2-V3 Draco"] = false,
+        ["Auto Accept Quest Fishing"] = false,
+        ["Value Speed Boat"] = 200
+    }
+    getgenv().Key = _G.Key_Banana_Hub
+    loadstring(game:HttpGet("https://raw.githubusercontent.com/obiiyeuem/vthangsitink/main/BananaHub.lua"))()
+
+    repeat
+        wait(0.5)
+    until tostring(game.Players.LocalPlayer.Data.Race.Value) == _G.Change_Race
+    game:GetService('TeleportService'):Teleport(game.PlaceId)
+    wait(50)
+elseif _G.Change_Race == 'Cyborg' and tostring(game.Players.LocalPlayer.Data.Race.Value) ~= _G.Change_Race then
+    repeat
+        wait()
+    until game:IsLoaded() and game.Players.LocalPlayer
+    getgenv().Config = {
+        ["Auto Fire Shoot Heart Leviathan"] = false,
+        ["Noti Profile"] = false,
+        ["Attack Darkbeard"] = false,
+        ["Tween Until Have Sea Event"] = false,
+        ["No Frog"] = false,
+        ["Auto Dodge Skill Mobs"] = false,
+        ["Ignore Craft Volcanic Magnet"] = false,
+        ["Auto Trade Azure Ember"] = false,
+        ["Auto Turn On V3"] = false,
+        ["Tween Boat To Frozen Dimension"] = false,
+        ["Change Size Reel"] = false,
+        ["Auto Aimbot Gun"] = false,
+        ["Distance Teleport Y"] = 800,
+        ["Auto New World"] = false,
+        ["Drive Boat To Hydra"] = false,
+        ["Auto Summon Soul Ember"] = false,
+        ["Summon Dough King"] = false,
+        ["Auto Store Fruit"] = false,
+        ["Auto Start Leviathan"] = false,
+        ["Auto Sell Fishing"] = false,
+        ["ESP Berry"] = false,
+        ["Account Pick Slot Raid"] = false,
+        ["Auto Multi Raid"] = false,
+        ["Change WalkSpeed"] = false,
+        ["ESP Island"] = false,
+        ["Multi Find Leviathan"] = false,
+        ["Auto Fishing"] = false,
+        ["Auto Quest Dojo Trainer"] = false,
+        ["Auto Buy Boat Beast Hunter"] = false,
+        ["Ignore Craft Volcanic Magnet Draco"] = false,
+        ["Auto Destroy IDK"] = false,
+        ["Select Skills Sword"] = {
+            ["Z"] = true,
+            ["X"] = true
+        },
+        ["Auto Get Rainbow Haki"] = false,
+        ["Boost Fps"] = false,
+        ["Random Devil Fruit [ Summer Token ]"] = false,
+        ["Auto Spawn Kitsune Island"] = false,
+        ["Fully Trial Draco"] = false,
+        ["Auto Trial"] = false,
+        ["Account Buy Chip"] = false,
+        ["Auto Get Cyborg Hop Collect Chest"] = true,
+        ["Kill players When complete Trial"] = false,
+        ["Hop Server Elite Hunter"] = false,
+        ["Auto Upgrade Sword Inventory"] = false,
+        ["Random Devil Fruit"] = false,
+        ["Use skill fast dont hold"] = false,
+        ["Auto Collect Bone"] = false,
+        ["Auto Aimbot"] = false,
+        ["Use Click M1 Fruit For Sea Event"] = false,
+        ["Teleport Y"] = false,
+        ["Values Azure Ember"] = 10,
+        ["Auto Turn On V4"] = false,
+        ["Hop Find Katakuri"] = false,
+        ["Input WalkSpeed"] = 200,
+        ["Use Dragonstorm For Sea Event"] = false,
+        ["Auto Touch Pad Haki"] = false,
+        ["Hop Server Kitsune Island"] = false,
+        ["Attack Dough King"] = false,
+        ["Spam Join"] = false,
+        ["Auto Farm Mastery 600 Sword In Inventory"] = false,
+        ["Summon Soul Reaper"] = false,
+        ["Auto Yama"] = false,
+        ["Auto Get Ghoul"] = false,
+        ["Hop Server Find Boss"] = false,
+        ["Summon Darkbeard"] = false,
+        ["Webhook Find Mirage"] = false,
+        ["Auto Finish Train Quest"] = false,
+        ["Webhook Find Leviathan"] = false,
+        ["Select Skills Gun"] = {
+            ["Z"] = true,
+            ["X"] = true
+        },
+        ["Auto Summon Rip Indra"] = false,
+        ["Tween Safe if have Items"] = false,
+        ["Auto Turn On Observation"] = false,
+        ["Auto Tween To Event Fishing Spot"] = false,
+        ["Auto Trade Bone"] = false,
+        ["Auto Chest Hop"] = false,
+        ["Auto Get Cyborg"] = true,
+        ["Select Skills Melee"] = {
+            ["X"] = true,
+            ["C"] = true,
+            ["Z"] = true
+        },
+        ["Auto Turn On V3 Near Door"] = false,
+        ["Fully Event Prehistoric Island"] = false,
+        ["Hop Sever Raid"] = false,
+        ["Auto Find Mirage"] = false,
+        ["Auto Collect Berry"] = false,
+        ["Auto Open Chest"] = false,
+        ["Auto Factory"] = false,
+        ["Attack Multi Segments Leviathan"] = false,
+        ["Auto Change Dragonstorm With Skull Guitar"] = false,
+        ["Auto Farm Mastery 600 Melees"] = false,
+        ["White Screen"] = false,
+        ["Auto Saber"] = false,
+        ["Auto Yoru Mini (Hop Server)"] = false,
+        ["Change Speed Boat"] = false,
+        ["Auto Yoru Mini"] = false,
+        ["Auto Buy Chip and Attack Law"] = false,
+        ["Kill Aura Mob Halloween"] = false,
+        ["Kill Boss"] = false,
+        ["Auto Turn On Buso"] = true,
+        ["Ignore Attack Katakuri"] = false,
+        ["Farm Observation [ Hop Server ]"] = false,
+        ["Distance Farm Aura"] = 300,
+        ["Auto UP Observation V2"] = false,
+        ["Attack No Animation "] = true,
+        ["Auto Soul Guitar"] = false,
+        ["Hop Find Darkbeard"] = false,
+        ["Kill Mob"] = false,
+        ["Auto Third World"] = false,
+        ["Auto TTK"] = false,
+        ["Value Damage Multi Segments"] = 30000,
+        ["Auto Buy Haki Color"] = false,
+        ["Auto Attack Leviathan"] = false,
+        ["Auto Buy Spy"] = false,
+        ["Teleport To Fruit [ Hop Server ]"] = false,
+        ["Farm Mastery"] = false,
+        ["Use Click M1 Fruit Leviathan"] = false,
+        ["Multi Trial"] = false,
+        ["Auto Load Script"] = false,
+        ["Use Click M1 Skull Guitar Leviathan"] = false,
+        ["Auto Collect Egg"] = false,
+        ["% Health Player"] = 40,
+        ["Auto Event Halloween"] = false,
+        ["Auto Pull Lever"] = false,
+        ["Teleport Player"] = false,
+        ["Use Your Boat Beast Hunter"] = false,
+        ["Hop Server [Trial Or Pull Lever]"] = false,
+        ["Auto Gacha Event Halloween"] = false,
+        ["Select Skills Blox Fruit"] = {
+            ["X"] = true,
+            ["C"] = true,
+            ["Z"] = true,
+            ["V"] = true,
+            ["F"] = true
+        },
+        ["Get Fruit In Inventory Low Beli"] = false,
+        ["Auto Get Fully Cyborg"] = true,
+        ["Teleport Frozen Dimension"] = false,
+        ["Auto Upgrade Race V2-V3"] = true,
+        ["Black Screen"] = false,
+        ["Auto Finish Train Draco Quest"] = false,
+        ["Auto Repair Ur Ship"] = false,
+        ["Auto Quest [Katakuri/Bone/Tyrant]"] = false,
+        ["Hop Server Get Ghoul"] = false,
+        ["Attack Soul Reaper"] = false,
+        ["Auto Dodge Skill Terrorshark"] = false,
+        ["Stack Train With Trial Race"] = false,
+        ["Auto rejoin Disconnect"] = false,
+        ["Auto Click"] = false,
+        ["Auto Awake Fruit"] = false,
+        ["Bring Mob"] = true,
+        ["Drive Boat To Tiki"] = false,
+        ["Farm Observation"] = false,
+        ["Hop Find Berry"] = false,
+        ["Change JumpPower"] = false,
+        ["Auto Find Leviathan"] = false,
+        ["Farm Material"] = false,
+        ["Start Farm"] = false,
+        ["Auto Dodge Skill Seabeast"] = false,
+        ["Will Back When over 10km"] = false,
+        ["Value Speed Fly Boat"] = 3,
+        ["Webhook Destroy IDK"] = false,
+        ["Speed Boat Auto Drive"] = 300,
+        ["Auto Choose Gears"] = false,
+        ["Auto Pirate Raid"] = false,
+        ["Time Hop Server"] = 10,
+        ["Auto Buy Gear Draco"] = false,
+        ["Auto Collect Soul Ember"] = false,
+        ["Auto Slap Battle"] = false,
+        ["Auto Elite Hunter"] = false,
+        ["Teleport To Kitsune Island"] = false,
+        ["ESP Fruit"] = false,
+        ["Auto Attack All Mob and Boss"] = false,
+        ["Health %"] = 40,
+        ["Teleport Acient Clock"] = false,
+        ["Use Portal Teleport"] = false,
+        ["Attack Rip Indra"] = false,
+        ["Fly Boat"] = false,
+        ["Ping Discord"] = false,
+        ["Value Collect Chest to Hop"] = 20,
+        ["Auto Trial Draco"] = false,
+        ["Ignore Collect Bone"] = false,
+        ["Reset Character Buy Boat"] = false,
+        ["Auto Sea Event"] = false,
+        ["Auto Stats"] = false,
+        ["Teleport Boat Other CFrame if Rough Sea"] = false,
+        ["Webhook Store Fruit"] = false,
+        ["Teleport To Fruit"] = false,
+        ["Auto Sea Event With Friend"] = false,
+        ["Auto Event Prehistoric Island"] = false,
+        ["Kill All Boss"] = false,
+        ["Auto Chest"] = false,
+        ["Just Use Skill when Player Active Ken"] = false,
+        ["Auto Buy Legendary Sword"] = false,
+        ["Kill Aura With DragonStorm"] = false,
+        ["Hop Server [ Haki color or Legendary Sword]"] = false,
+        ["Auto Craft Item Shark Anchor"] = false,
+        ["Use Skill when Kill Player"] = false,
+        ["Auto Raid"] = false,
+        ["Auto Quest Dragon Hunter"] = false,
+        ["Auto Tushita"] = false,
+        ["Remove Notifications"] = false,
+        ["Use Click M1 Skull Guitar For Sea Event"] = false,
+        ["Auto CDK"] = false,
+        ["Auto Crafting Volcanic Magnet"] = false,
+        ["Auto Upgrade Gun Inventory"] = false,
+        ["Buy Blox Fruit Sniper Shop"] = false,
+        ["Auto Reset Character"] = false,
+        ["Auto Find Prehistoric Island"] = false,
+        ["Auto Buy Gear"] = false,
+        ["ESP Player"] = false,
+        ["Input JumpPower"] = 200,
+        ["Hop Find Dough King"] = false,
+        ["Walk On Water "] = true,
+        ["Webhook Find Prehistoric Island"] = false,
+        ["Auto Upgrade Race V2-V3 Draco"] = false,
+        ["Auto Accept Quest Fishing"] = false,
+        ["Value Speed Boat"] = 200
+    }
+    getgenv().Key = _G.Key_Banana_Hub
+    loadstring(game:HttpGet("https://raw.githubusercontent.com/obiiyeuem/vthangsitink/main/BananaHub.lua"))()
+
+    repeat
+        wait(0.5)
+    until tostring(game.Players.LocalPlayer.Data.Race.Value) == _G.Change_Race
+    game:GetService('TeleportService'):Teleport(game.PlaceId)
+    wait(50)
+end
+if New_World or Three_World then
+    if game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("Alchemist", "3") == -2 then -- V1
+        Evo_Race_V1_H = true
+    end
+end
+if New_World or Three_World then
+    if game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("Wenlocktoad", "1") ~= nil and Evo_Race_V1_H then -- V2
+        Evo_Race_V2_H = true
+    end
+end
+if New_World or Three_World then
+    if game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("Wenlocktoad", "3") == -2 then
+        Evo_Race_V3_H = true
+    end
+end
+
+if Evo_Race_V3_H then
+    if tostring(
+        (table.pack(game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("UpgradeRace", "Check"))[2])) ==
+        'nil' then
+    else
+        Evo_Race_V4_H = true
+    end
+end
+if Evo_Race_V4_H then
+    Race_Int = 'V4 T' ..
+                   tostring(
+            (table.pack(game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("UpgradeRace", "Check"))[2]))
+elseif Evo_Race_V3_H then
+    Race_Int = 'V3'
+elseif Evo_Race_V2_H then
+    Race_Int = 'V2'
+elseif Evo_Race_V1_H then
+    Race_Int = 'V1'
+else
+    Race_Int = 'V0'
+end
+Oyster_H = false
+Hot_pink_H = false
+Really_red_H = false
+while wait(0.1) do
+    pcall(function()
+        if not Evo_Race_V3_H then
+            if not okpskd and not Evo_Race_V3_H then
+                spawn(function()
+                    repeat
+                        wait()
+                    until game:IsLoaded() and game.Players.LocalPlayer
+                    getgenv().Config = {
+                        ["Auto Fire Shoot Heart Leviathan"] = false,
+                        ["Noti Profile"] = false,
+                        ["Attack Darkbeard"] = false,
+                        ["Tween Until Have Sea Event"] = false,
+                        ["No Frog"] = false,
+                        ["Auto Dodge Skill Mobs"] = false,
+                        ["Ignore Craft Volcanic Magnet"] = false,
+                        ["Auto Trade Azure Ember"] = false,
+                        ["Auto Turn On V3"] = false,
+                        ["Tween Boat To Frozen Dimension"] = false,
+                        ["Change Size Reel"] = false,
+                        ["Auto Aimbot Gun"] = false,
+                        ["Distance Teleport Y"] = 800,
+                        ["Auto New World"] = false,
+                        ["Drive Boat To Hydra"] = false,
+                        ["Auto Summon Soul Ember"] = false,
+                        ["Summon Dough King"] = false,
+                        ["Auto Store Fruit"] = false,
+                        ["Auto Start Leviathan"] = false,
+                        ["Auto Sell Fishing"] = false,
+                        ["ESP Berry"] = false,
+                        ["Account Pick Slot Raid"] = false,
+                        ["Auto Multi Raid"] = false,
+                        ["Change WalkSpeed"] = false,
+                        ["ESP Island"] = false,
+                        ["Multi Find Leviathan"] = false,
+                        ["Auto Fishing"] = false,
+                        ["Auto Quest Dojo Trainer"] = false,
+                        ["Auto Buy Boat Beast Hunter"] = false,
+                        ["Ignore Craft Volcanic Magnet Draco"] = false,
+                        ["Auto Destroy IDK"] = false,
+                        ["Select Skills Sword"] = {
+                            ["Z"] = true,
+                            ["X"] = true
+                        },
+                        ["Auto Get Rainbow Haki"] = false,
+                        ["Boost Fps"] = false,
+                        ["Random Devil Fruit [ Summer Token ]"] = false,
+                        ["Auto Spawn Kitsune Island"] = false,
+                        ["Fully Trial Draco"] = false,
+                        ["Auto Trial"] = false,
+                        ["Account Buy Chip"] = false,
+                        ["Auto Get Cyborg Hop Collect Chest"] = false,
+                        ["Kill players When complete Trial"] = false,
+                        ["Hop Server Elite Hunter"] = false,
+                        ["Auto Upgrade Sword Inventory"] = false,
+                        ["Random Devil Fruit"] = false,
+                        ["Use skill fast dont hold"] = false,
+                        ["Auto Collect Bone"] = false,
+                        ["Auto Aimbot"] = false,
+                        ["Use Click M1 Fruit For Sea Event"] = false,
+                        ["Teleport Y"] = false,
+                        ["Values Azure Ember"] = 10,
+                        ["Auto Turn On V4"] = false,
+                        ["Hop Find Katakuri"] = false,
+                        ["Input WalkSpeed"] = 200,
+                        ["Use Dragonstorm For Sea Event"] = false,
+                        ["Auto Touch Pad Haki"] = false,
+                        ["Hop Server Kitsune Island"] = false,
+                        ["Attack Dough King"] = false,
+                        ["Spam Join"] = false,
+                        ["Auto Farm Mastery 600 Sword In Inventory"] = false,
+                        ["Summon Soul Reaper"] = false,
+                        ["Auto Yama"] = false,
+                        ["Auto Get Ghoul"] = false,
+                        ["Hop Server Find Boss"] = false,
+                        ["Summon Darkbeard"] = false,
+                        ["Webhook Find Mirage"] = false,
+                        ["Auto Finish Train Quest"] = false,
+                        ["Webhook Find Leviathan"] = false,
+                        ["Select Skills Gun"] = {
+                            ["Z"] = true,
+                            ["X"] = true
+                        },
+                        ["Auto Summon Rip Indra"] = false,
+                        ["Tween Safe if have Items"] = false,
+                        ["Auto Turn On Observation"] = false,
+                        ["Auto Tween To Event Fishing Spot"] = false,
+                        ["Auto Trade Bone"] = false,
+                        ["Auto Chest Hop"] = false,
+                        ["Auto Get Cyborg"] = false,
+                        ["Select Skills Melee"] = {
+                            ["X"] = true,
+                            ["C"] = true,
+                            ["Z"] = true
+                        },
+                        ["Auto Turn On V3 Near Door"] = false,
+                        ["Fully Event Prehistoric Island"] = false,
+                        ["Hop Sever Raid"] = false,
+                        ["Auto Find Mirage"] = false,
+                        ["Auto Collect Berry"] = false,
+                        ["Auto Open Chest"] = false,
+                        ["Auto Factory"] = false,
+                        ["Attack Multi Segments Leviathan"] = false,
+                        ["Auto Change Dragonstorm With Skull Guitar"] = false,
+                        ["Auto Farm Mastery 600 Melees"] = false,
+                        ["White Screen"] = false,
+                        ["Auto Saber"] = false,
+                        ["Auto Yoru Mini (Hop Server)"] = false,
+                        ["Change Speed Boat"] = false,
+                        ["Auto Yoru Mini"] = false,
+                        ["Auto Buy Chip and Attack Law"] = false,
+                        ["Kill Aura Mob Halloween"] = false,
+                        ["Kill Boss"] = false,
+                        ["Auto Turn On Buso"] = false,
+                        ["Ignore Attack Katakuri"] = false,
+                        ["Farm Observation [ Hop Server ]"] = false,
+                        ["Distance Farm Aura"] = 300,
+                        ["Auto UP Observation V2"] = false,
+                        ["Attack No Animation "] = true,
+                        ["Auto Soul Guitar"] = false,
+                        ["Hop Find Darkbeard"] = false,
+                        ["Kill Mob"] = false,
+                        ["Auto Third World"] = false,
+                        ["Auto TTK"] = false,
+                        ["Value Damage Multi Segments"] = 30000,
+                        ["Auto Buy Haki Color"] = false,
+                        ["Auto Attack Leviathan"] = false,
+                        ["Auto Buy Spy"] = false,
+                        ["Teleport To Fruit [ Hop Server ]"] = false,
+                        ["Farm Mastery"] = false,
+                        ["Use Click M1 Fruit Leviathan"] = false,
+                        ["Multi Trial"] = false,
+                        ["Auto Load Script"] = false,
+                        ["Use Click M1 Skull Guitar Leviathan"] = false,
+                        ["Auto Collect Egg"] = false,
+                        ["% Health Player"] = 40,
+                        ["Auto Event Halloween"] = false,
+                        ["Auto Pull Lever"] = false,
+                        ["Teleport Player"] = false,
+                        ["Use Your Boat Beast Hunter"] = false,
+                        ["Hop Server [Trial Or Pull Lever]"] = false,
+                        ["Auto Gacha Event Halloween"] = false,
+                        ["Select Skills Blox Fruit"] = {
+                            ["X"] = true,
+                            ["C"] = true,
+                            ["Z"] = true,
+                            ["V"] = true,
+                            ["F"] = true
+                        },
+                        ["Get Fruit In Inventory Low Beli"] = false,
+                        ["Auto Get Fully Cyborg"] = false,
+                        ["Teleport Frozen Dimension"] = false,
+                        ["Auto Upgrade Race V2-V3"] = true,
+                        ["Black Screen"] = false,
+                        ["Auto Finish Train Draco Quest"] = false,
+                        ["Auto Repair Ur Ship"] = false,
+                        ["Auto Quest [Katakuri/Bone/Tyrant]"] = false,
+                        ["Hop Server Get Ghoul"] = false,
+                        ["Attack Soul Reaper"] = false,
+                        ["Auto Dodge Skill Terrorshark"] = false,
+                        ["Stack Train With Trial Race"] = false,
+                        ["Auto rejoin Disconnect"] = false,
+                        ["Auto Click"] = false,
+                        ["Auto Awake Fruit"] = false,
+                        ["Bring Mob"] = true,
+                        ["Drive Boat To Tiki"] = false,
+                        ["Farm Observation"] = false,
+                        ["Hop Find Berry"] = false,
+                        ["Change JumpPower"] = false,
+                        ["Auto Find Leviathan"] = false,
+                        ["Farm Material"] = false,
+                        ["Start Farm"] = false,
+                        ["Auto Dodge Skill Seabeast"] = false,
+                        ["Will Back When over 10km"] = false,
+                        ["Value Speed Fly Boat"] = 3,
+                        ["Webhook Destroy IDK"] = false,
+                        ["Speed Boat Auto Drive"] = 300,
+                        ["Auto Choose Gears"] = false,
+                        ["Auto Pirate Raid"] = false,
+                        ["Time Hop Server"] = 10,
+                        ["Auto Buy Gear Draco"] = false,
+                        ["Auto Collect Soul Ember"] = false,
+                        ["Auto Slap Battle"] = false,
+                        ["Auto Elite Hunter"] = false,
+                        ["Teleport To Kitsune Island"] = false,
+                        ["ESP Fruit"] = false,
+                        ["Auto Attack All Mob and Boss"] = false,
+                        ["Health %"] = 40,
+                        ["Teleport Acient Clock"] = false,
+                        ["Use Portal Teleport"] = false,
+                        ["Attack Rip Indra"] = false,
+                        ["Fly Boat"] = false,
+                        ["Ping Discord"] = false,
+                        ["Value Collect Chest to Hop"] = 20,
+                        ["Auto Trial Draco"] = false,
+                        ["Ignore Collect Bone"] = false,
+                        ["Reset Character Buy Boat"] = false,
+                        ["Auto Sea Event"] = false,
+                        ["Auto Stats"] = false,
+                        ["Teleport Boat Other CFrame if Rough Sea"] = false,
+                        ["Webhook Store Fruit"] = false,
+                        ["Teleport To Fruit"] = false,
+                        ["Auto Sea Event With Friend"] = false,
+                        ["Auto Event Prehistoric Island"] = false,
+                        ["Kill All Boss"] = false,
+                        ["Auto Chest"] = false,
+                        ["Just Use Skill when Player Active Ken"] = false,
+                        ["Auto Buy Legendary Sword"] = false,
+                        ["Kill Aura With DragonStorm"] = false,
+                        ["Hop Server [ Haki color or Legendary Sword]"] = false,
+                        ["Auto Craft Item Shark Anchor"] = false,
+                        ["Use Skill when Kill Player"] = false,
+                        ["Auto Raid"] = false,
+                        ["Auto Quest Dragon Hunter"] = false,
+                        ["Auto Tushita"] = false,
+                        ["Remove Notifications"] = false,
+                        ["Use Click M1 Skull Guitar For Sea Event"] = false,
+                        ["Auto CDK"] = false,
+                        ["Auto Crafting Volcanic Magnet"] = false,
+                        ["Auto Upgrade Gun Inventory"] = false,
+                        ["Buy Blox Fruit Sniper Shop"] = false,
+                        ["Auto Reset Character"] = false,
+                        ["Auto Find Prehistoric Island"] = false,
+                        ["Auto Buy Gear"] = false,
+                        ["ESP Player"] = false,
+                        ["Input JumpPower"] = 200,
+                        ["Hop Find Dough King"] = false,
+                        ["Walk On Water "] = true,
+                        ["Webhook Find Prehistoric Island"] = false,
+                        ["Auto Upgrade Race V2-V3 Draco"] = false,
+                        ["Auto Accept Quest Fishing"] = false,
+                        ["Value Speed Boat"] = 200
+                    }
+                    getgenv().Key = _G.Key_Banana_Hub
+                    loadstring(game:HttpGet(
+                        "https://raw.githubusercontent.com/obiiyeuem/vthangsitink/main/BananaHub.lua"))()
+
+                end)
+                okpskd = true
+            elseif okpskd and Evo_Race_V3_H then
+                game:GetService('TeleportService'):Teleport(game.PlaceId)
+                wait(50)
+            end
+            pcall(function()
+                if game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("Wenlocktoad", "3") == -2 then
+                    Evo_Race_V3_H = true
+                end
+            end)
+            wait(20)
+        elseif not Valkyrie_Helm_H then
+            FLY = false
+            if Check_Item('Valkyrie Helm') then
+                print('✅ Valkyrie Helm')
+                Valkyrie_Helm_H = true
+            end
+            if not ijodfgd and not Valkyrie_Helm_H then
+                ijodfgd = true
+                -- Valkyrie Helm
+                spawn(function()
+                    _G.Setting = {}
+                    _G.Setting['Auto Buy Legendary Color Haki'] = true
+                    _G.Setting['Auto Valkyrie Helm + Hop'] = true
+                    loadstring(game:HttpGet(
+                        "https://raw.githubusercontent.com/konpa11447788/compa/refs/heads/main/Pro.lua"))()
+                end)
+            elseif ijodfgd and Valkyrie_Helm_H then
+                game:GetService('TeleportService'):Teleport(game.PlaceId)
+                wait(50)
+            end
+            wait(2)
+            -- if not Three_World then
+            --     game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("TravelZou")
+            --     wait(50)
+            -- end
+            -- if Check_Item('Valkyrie Helm') then
+            --     print('✅ Valkyrie Helm')
+            --     Valkyrie_Helm_H = true
+            -- elseif workspace.Enemies:FindFirstChild("rip_indra True Form") then
+            --     Start_Attack = true
+            --     for i, v in pairs(workspace.Enemies:GetChildren()) do
+            --         if v.Name == "rip_indra True Form" and v.Humanoid.Health > 0 then
+            --             repeat
+            --                 wait(0.1)
+            --                 TP(v.HumanoidRootPart.CFrame * CFrame.new(0, 25, 25))
+            --             until not v.Parent or v.Humanoid.Health <= 0
+            --         end
+            --     end
+            --     Start_Attack = false
+            -- elseif game:GetService("ReplicatedStorage"):FindFirstChild("rip_indra True Form") then
+            --     TP(game:GetService("ReplicatedStorage"):FindFirstChild("rip_indra True Form").HumanoidRootPart.CFrame *
+            --            CFrame.new(0, 10, 10))
+            -- elseif not workspace.Enemies:FindFirstChild("rip_indra True Form") and
+            --     not game:GetService("ReplicatedStorage"):FindFirstChild("rip_indra True Form") then
+            --     repeat
+            --         wait(0.1)
+            --         TP(CFrame.new(-5114.81884765625, 314.88275146484375, -2963.92626953125))
+            --     until (Vector3.new(-5114.81884765625, 314.88275146484375, -2963.92626953125) -
+            --         game.Players.LocalPlayer.Character.HumanoidRootPart.Position).Magnitude <= 100
+            --     local list = Get_API('rip_indra True Form')
+            --     if list and #list > 0 then
+            --         if not kopsdf then
+            --             if not Setting_mem['Old JobID'] or #Setting_mem['Old JobID'] >= 30 then
+            --                 Setting_mem['Old JobID'] = {}
+            --             end
+            --             if Setting_mem['Old JobID'] then
+            --                 table.insert(Setting_mem['Old JobID'], tostring(game.JobId))
+            --             end
+            --             Update_Setting(Save_Setting)
+            --             kopsdf = true
+            --         end
+            --         for i, v in pairs(list) do
+            --             if not table.find(Setting_mem['Old JobID'], tostring(v)) and
+            --                 not table.find(list_server_low, tostring(v)) then
+            --                 hoping = false
+            --                 local TeleportService = game:GetService("TeleportService")
+            --                 TeleportService:TeleportToPlaceInstance(tostring(game.PlaceId), tostring(v),
+            --                     game.Players.LocalPlayer)
+            --                 repeat
+            --                     wait(0.1)
+            --                 until hoping
+            --                 table.insert(list_server_low, tostring(v))
+            --             end
+            --         end
+            --         wait(5)
+            --     end
+            -- end
+        elseif not Mirror_Fractal_H then
+            FLY = false
+            if Check_Material('Mirror Fractal') >= 1 then
+                print('✅ Mirror Fractal')
+                Mirror_Fractal_H = true
+            end
+            if not okpskd and not Mirror_Fractal_H then
+                spawn(function()
+                    -- Mirror Fractal
+                    _G.Setting = {}
+                    _G.Setting['Auto Mirror Fractal + Hop'] = true
+                    loadstring(game:HttpGet(
+                        "https://raw.githubusercontent.com/konpa11447788/compa/refs/heads/main/Pro.lua"))()
+                end)
+                okpskd = true
+            elseif okpskd and Mirror_Fractal_H then
+                game:GetService('TeleportService'):Teleport(game.PlaceId)
+                wait(50)
+            end
+            wait(2)
+            -- if not Three_World then
+            --     game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("TravelZou")
+            --     wait(50)
+            -- end
+            -- if Check_Material('Mirror Fractal') >= 1 then
+            --     print('✅ Mirror Fractal')
+            --     Mirror_Fractal_H = true
+            -- elseif workspace.Enemies:FindFirstChild("Dough King") then
+            --     Start_Attack = true
+            --     for i, v in pairs(workspace.Enemies:GetChildren()) do
+            --         if v.Name == "Dough King" and v.Humanoid.Health > 0 then
+            --             repeat
+            --                 wait(0.1)
+            --                 TP(v.HumanoidRootPart.CFrame * CFrame.new(0, 25, 25))
+            --             until not v.Parent or v.Humanoid.Health <= 0
+            --         end
+            --     end
+            --     Start_Attack = false
+            -- elseif game:GetService("ReplicatedStorage"):FindFirstChild("Dough King") then
+            --     TP(game:GetService("ReplicatedStorage"):FindFirstChild("Dough King").HumanoidRootPart.CFrame *
+            --            CFrame.new(0, 10, 10))
+            -- elseif not workspace.Enemies:FindFirstChild("Dough King") and
+            --     not game:GetService("ReplicatedStorage"):FindFirstChild("Dough King") then
+            --     repeat
+            --         wait(0.1)
+            --         TP(CFrame.new(-2135.237060546875, 70.349853515625, -12300.134765625))
+            --     until (Vector3.new(-2135.237060546875, 70.349853515625, -12300.134765625) -
+            --         game.Players.LocalPlayer.Character.HumanoidRootPart.Position).Magnitude <= 100
+            --     local list = Get_API('Dough King')
+            --     if list and #list > 0 then
+            --         if not kopsdf then
+            --             if not Setting_mem['Old JobID'] or #Setting_mem['Old JobID'] >= 30 then
+            --                 Setting_mem['Old JobID'] = {}
+            --             end
+            --             if Setting_mem['Old JobID'] then
+            --                 table.insert(Setting_mem['Old JobID'], tostring(game.JobId))
+            --             end
+            --             Update_Setting(Save_Setting)
+            --             kopsdf = true
+            --         end
+            --         for i, v in pairs(list) do
+            --             if not table.find(Setting_mem['Old JobID'], tostring(v)) and
+            --                 not table.find(list_server_low, tostring(v)) then
+            --                 hoping = false
+            --                 local TeleportService = game:GetService("TeleportService")
+            --                 TeleportService:TeleportToPlaceInstance(tostring(game.PlaceId), tostring(v),
+            --                     game.Players.LocalPlayer)
+            --                 repeat
+            --                     wait(0.1)
+            --                 until hoping
+            --                 table.insert(list_server_low, tostring(v))
+            --             end
+            --         end
+            --         wait(5)
+            --     end
+            -- end
+        elseif not Pull_Lever_H then
+            wait(0.2)
+            if not Three_World then
+                game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("TravelZou")
+                wait(50)
+            end
+            if not ijodfgij then
+                ijodfgij = true
+                repeat
+                    wait()
+                until game:IsLoaded() and game.Players.LocalPlayer
+                getgenv().Config = {
+                    ["Auto Fire Shoot Heart Leviathan"] = false,
+                    ["Noti Profile"] = false,
+                    ["Attack Darkbeard"] = false,
+                    ["Tween Until Have Sea Event"] = false,
+                    ["No Frog"] = false,
+                    ["Auto Dodge Skill Mobs"] = false,
+                    ["Ignore Craft Volcanic Magnet"] = false,
+                    ["Auto Trade Azure Ember"] = false,
+                    ["Auto Turn On V3"] = false,
+                    ["Tween Boat To Frozen Dimension"] = false,
+                    ["Change Size Reel"] = false,
+                    ["Auto Aimbot Gun"] = false,
+                    ["Distance Teleport Y"] = 800,
+                    ["Auto New World"] = false,
+                    ["Drive Boat To Hydra"] = false,
+                    ["Auto Summon Soul Ember"] = false,
+                    ["Summon Dough King"] = false,
+                    ["Auto Store Fruit"] = false,
+                    ["Auto Start Leviathan"] = false,
+                    ["Auto Sell Fishing"] = false,
+                    ["ESP Berry"] = false,
+                    ["Account Pick Slot Raid"] = false,
+                    ["Auto Multi Raid"] = false,
+                    ["Change WalkSpeed"] = false,
+                    ["ESP Island"] = false,
+                    ["Multi Find Leviathan"] = false,
+                    ["Auto Fishing"] = false,
+                    ["Auto Quest Dojo Trainer"] = false,
+                    ["Auto Buy Boat Beast Hunter"] = false,
+                    ["Ignore Craft Volcanic Magnet Draco"] = false,
+                    ["Auto Destroy IDK"] = false,
+                    ["Select Skills Sword"] = {
+                        ["Z"] = true,
+                        ["X"] = true
+                    },
+                    ["Auto Get Rainbow Haki"] = false,
+                    ["Boost Fps"] = false,
+                    ["Random Devil Fruit [ Summer Token ]"] = false,
+                    ["Auto Spawn Kitsune Island"] = false,
+                    ["Fully Trial Draco"] = false,
+                    ["Auto Trial"] = false,
+                    ["Account Buy Chip"] = false,
+                    ["Auto Get Cyborg Hop Collect Chest"] = false,
+                    ["Kill players When complete Trial"] = false,
+                    ["Hop Server Elite Hunter"] = false,
+                    ["Auto Upgrade Sword Inventory"] = false,
+                    ["Random Devil Fruit"] = false,
+                    ["Use skill fast dont hold"] = false,
+                    ["Auto Collect Bone"] = false,
+                    ["Auto Aimbot"] = false,
+                    ["Use Click M1 Fruit For Sea Event"] = false,
+                    ["Teleport Y"] = false,
+                    ["Values Azure Ember"] = 10,
+                    ["Auto Turn On V4"] = false,
+                    ["Hop Find Katakuri"] = false,
+                    ["Input WalkSpeed"] = 200,
+                    ["Use Dragonstorm For Sea Event"] = false,
+                    ["Auto Touch Pad Haki"] = false,
+                    ["Hop Server Kitsune Island"] = false,
+                    ["Attack Dough King"] = false,
+                    ["Spam Join"] = false,
+                    ["Auto Farm Mastery 600 Sword In Inventory"] = false,
+                    ["Summon Soul Reaper"] = false,
+                    ["Auto Yama"] = false,
+                    ["Auto Get Ghoul"] = false,
+                    ["Hop Server Find Boss"] = false,
+                    ["Summon Darkbeard"] = false,
+                    ["Webhook Find Mirage"] = false,
+                    ["Auto Finish Train Quest"] = false,
+                    ["Webhook Find Leviathan"] = false,
+                    ["Select Skills Gun"] = {
+                        ["Z"] = true,
+                        ["X"] = true
+                    },
+                    ["Auto Summon Rip Indra"] = false,
+                    ["Tween Safe if have Items"] = false,
+                    ["Auto Turn On Observation"] = false,
+                    ["Auto Tween To Event Fishing Spot"] = false,
+                    ["Auto Trade Bone"] = false,
+                    ["Auto Chest Hop"] = false,
+                    ["Auto Get Cyborg"] = false,
+                    ["Select Skills Melee"] = {
+                        ["X"] = true,
+                        ["C"] = true,
+                        ["Z"] = true
+                    },
+                    ["Auto Turn On V3 Near Door"] = false,
+                    ["Fully Event Prehistoric Island"] = false,
+                    ["Hop Sever Raid"] = false,
+                    ["Auto Find Mirage"] = false,
+                    ["Auto Collect Berry"] = false,
+                    ["Auto Open Chest"] = false,
+                    ["Auto Factory"] = false,
+                    ["Attack Multi Segments Leviathan"] = false,
+                    ["Auto Change Dragonstorm With Skull Guitar"] = false,
+                    ["Auto Farm Mastery 600 Melees"] = false,
+                    ["White Screen"] = false,
+                    ["Auto Saber"] = false,
+                    ["Auto Yoru Mini (Hop Server)"] = false,
+                    ["Change Speed Boat"] = false,
+                    ["Auto Yoru Mini"] = false,
+                    ["Auto Buy Chip and Attack Law"] = false,
+                    ["Kill Aura Mob Halloween"] = false,
+                    ["Kill Boss"] = false,
+                    ["Auto Turn On Buso"] = false,
+                    ["Ignore Attack Katakuri"] = false,
+                    ["Farm Observation [ Hop Server ]"] = false,
+                    ["Distance Farm Aura"] = 300,
+                    ["Auto UP Observation V2"] = false,
+                    ["Attack No Animation "] = true,
+                    ["Auto Soul Guitar"] = false,
+                    ["Hop Find Darkbeard"] = false,
+                    ["Kill Mob"] = false,
+                    ["Auto Third World"] = false,
+                    ["Auto TTK"] = false,
+                    ["Value Damage Multi Segments"] = 30000,
+                    ["Auto Buy Haki Color"] = false,
+                    ["Auto Attack Leviathan"] = false,
+                    ["Auto Buy Spy"] = false,
+                    ["Teleport To Fruit [ Hop Server ]"] = false,
+                    ["Farm Mastery"] = false,
+                    ["Use Click M1 Fruit Leviathan"] = false,
+                    ["Multi Trial"] = false,
+                    ["Auto Load Script"] = false,
+                    ["Use Click M1 Skull Guitar Leviathan"] = false,
+                    ["Auto Collect Egg"] = false,
+                    ["% Health Player"] = 40,
+                    ["Auto Event Halloween"] = false,
+                    ["Auto Pull Lever"] = true,
+                    ["Teleport Player"] = false,
+                    ["Use Your Boat Beast Hunter"] = false,
+                    ["Hop Server [Trial Or Pull Lever]"] = true,
+                    ["Auto Gacha Event Halloween"] = false,
+                    ["Select Skills Blox Fruit"] = {
+                        ["X"] = true,
+                        ["C"] = true,
+                        ["Z"] = true,
+                        ["V"] = true,
+                        ["F"] = true
+                    },
+                    ["Get Fruit In Inventory Low Beli"] = false,
+                    ["Auto Get Fully Cyborg"] = false,
+                    ["Teleport Frozen Dimension"] = false,
+                    ["Auto Upgrade Race V2-V3"] = false,
+                    ["Black Screen"] = false,
+                    ["Auto Finish Train Draco Quest"] = false,
+                    ["Auto Repair Ur Ship"] = false,
+                    ["Auto Quest [Katakuri/Bone/Tyrant]"] = false,
+                    ["Hop Server Get Ghoul"] = false,
+                    ["Attack Soul Reaper"] = false,
+                    ["Auto Dodge Skill Terrorshark"] = false,
+                    ["Stack Train With Trial Race"] = false,
+                    ["Auto rejoin Disconnect"] = false,
+                    ["Auto Click"] = false,
+                    ["Auto Awake Fruit"] = false,
+                    ["Bring Mob"] = true,
+                    ["Drive Boat To Tiki"] = false,
+                    ["Farm Observation"] = false,
+                    ["Hop Find Berry"] = false,
+                    ["Change JumpPower"] = false,
+                    ["Auto Find Leviathan"] = false,
+                    ["Farm Material"] = false,
+                    ["Start Farm"] = false,
+                    ["Auto Dodge Skill Seabeast"] = false,
+                    ["Will Back When over 10km"] = false,
+                    ["Value Speed Fly Boat"] = 3,
+                    ["Webhook Destroy IDK"] = false,
+                    ["Speed Boat Auto Drive"] = 300,
+                    ["Auto Choose Gears"] = false,
+                    ["Auto Pirate Raid"] = false,
+                    ["Time Hop Server"] = 10,
+                    ["Auto Buy Gear Draco"] = false,
+                    ["Auto Collect Soul Ember"] = false,
+                    ["Auto Slap Battle"] = false,
+                    ["Auto Elite Hunter"] = false,
+                    ["Teleport To Kitsune Island"] = false,
+                    ["ESP Fruit"] = false,
+                    ["Auto Attack All Mob and Boss"] = false,
+                    ["Health %"] = 40,
+                    ["Teleport Acient Clock"] = false,
+                    ["Use Portal Teleport"] = false,
+                    ["Attack Rip Indra"] = false,
+                    ["Fly Boat"] = false,
+                    ["Ping Discord"] = false,
+                    ["Value Collect Chest to Hop"] = 20,
+                    ["Auto Trial Draco"] = false,
+                    ["Ignore Collect Bone"] = false,
+                    ["Reset Character Buy Boat"] = false,
+                    ["Auto Sea Event"] = false,
+                    ["Auto Stats"] = false,
+                    ["Teleport Boat Other CFrame if Rough Sea"] = false,
+                    ["Webhook Store Fruit"] = false,
+                    ["Teleport To Fruit"] = false,
+                    ["Auto Sea Event With Friend"] = false,
+                    ["Auto Event Prehistoric Island"] = false,
+                    ["Kill All Boss"] = false,
+                    ["Auto Chest"] = false,
+                    ["Just Use Skill when Player Active Ken"] = false,
+                    ["Auto Buy Legendary Sword"] = false,
+                    ["Kill Aura With DragonStorm"] = false,
+                    ["Hop Server [ Haki color or Legendary Sword]"] = false,
+                    ["Auto Craft Item Shark Anchor"] = false,
+                    ["Use Skill when Kill Player"] = false,
+                    ["Auto Raid"] = false,
+                    ["Auto Quest Dragon Hunter"] = false,
+                    ["Auto Tushita"] = false,
+                    ["Remove Notifications"] = false,
+                    ["Use Click M1 Skull Guitar For Sea Event"] = false,
+                    ["Auto CDK"] = false,
+                    ["Auto Crafting Volcanic Magnet"] = false,
+                    ["Auto Upgrade Gun Inventory"] = false,
+                    ["Buy Blox Fruit Sniper Shop"] = false,
+                    ["Auto Reset Character"] = false,
+                    ["Auto Find Prehistoric Island"] = false,
+                    ["Auto Buy Gear"] = false,
+                    ["ESP Player"] = false,
+                    ["Input JumpPower"] = 200,
+                    ["Hop Find Dough King"] = false,
+                    ["Walk On Water "] = true,
+                    ["Webhook Find Prehistoric Island"] = false,
+                    ["Auto Upgrade Race V2-V3 Draco"] = false,
+                    ["Auto Accept Quest Fishing"] = false,
+                    ["Value Speed Boat"] = 200
+                }
+                getgenv().Key = _G.Key_Banana_Hub
+                loadstring(game:HttpGet("https://raw.githubusercontent.com/obiiyeuem/vthangsitink/main/BananaHub.lua"))()
+
+            end
+            if game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("CheckTempleDoor") == true then
+                Pull_Lever_H = true
+                print('✅ Pull Lever')
+            end
+            wait(10)
+            -- if game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("CheckTempleDoor") == true then
+            --     Pull_Lever_H = true
+            --     print('✅ Pull Lever')
+            -- elseif Hop_Go then
+            --     local list = Get_API('Mirage')
+            --     if list and #list > 0 then
+            --         if not kopsdf then
+            --             if not Setting_mem['Old JobID'] or #Setting_mem['Old JobID'] >= 30 then
+            --                 Setting_mem['Old JobID'] = {}
+            --             end
+            --             if Setting_mem['Old JobID'] and not table.find(Setting_mem['Old JobID'], tostring(game.JobId)) then
+            --                 table.insert(Setting_mem['Old JobID'], tostring(game.JobId))
+            --             end
+            --             Update_Setting(Save_Setting)
+            --             kopsdf = true
+            --         end
+            --         for i, v in pairs(list) do
+            --             if not table.find(Setting_mem['Old JobID'], tostring(v)) and
+            --                 not table.find(list_server_low, tostring(v)) then
+            --                 hoping = false
+            --                 local TeleportService = game:GetService("TeleportService")
+            --                 TeleportService:TeleportToPlaceInstance(tostring(game.PlaceId), tostring(v),
+            --                     game.Players.LocalPlayer)
+            --                 repeat
+            --                     wait(0.1)
+            --                 until hoping
+            --                 table.insert(list_server_low, tostring(v))
+            --             end
+            --         end
+            --         wait(5)
+            --     end
+            -- elseif not ExSeb then
+            --     if game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("RaceV4Progress", "Check") == 1 then
+            --         local args = {
+            --             [1] = "RaceV4Progress",
+            --             [2] = "Check"
+            --         }
+            --         game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer(unpack(args))
+            --         local args = {
+            --             [1] = "RaceV4Progress",
+            --             [2] = "Begin"
+            --         }
+
+            --         game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("CommF_"):InvokeServer(
+            --             unpack(args))
+
+            --     elseif game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("RaceV4Progress", "Check") == 2 then
+            --         repeat
+            --             wait(0.1)
+            --             TP(CFrame.new(3034.46338, 2281.5481, -7326.42773))
+            --         until (game.Players.LocalPlayer.Character.HumanoidRootPart.Position -
+            --             Vector3.new(3034.46338, 2281.5481, -7326.42773)).Magnitude <= 5
+            --         TP(game.Players.LocalPlayer.Character.HumanoidRootPart.CFrame)
+            --         wait(0.3)
+            --         local args = {
+            --             [1] = "RaceV4Progress",
+            --             [2] = "Check"
+            --         }
+            --         game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer(unpack(args))
+            --         local args = {
+            --             [1] = "RaceV4Progress",
+            --             [2] = "Teleport"
+            --         }
+
+            --         game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer(unpack(args))
+            --         wait(1)
+            --         repeat
+            --             wait(0.1)
+            --             TP(CFrame.new(28607.1055, 14896.874, 107.143074))
+            --         until (game.Players.LocalPlayer.Character.HumanoidRootPart.Position -
+            --             Vector3.new(28607.1055, 14896.874, 107.143074)).Magnitude <= 5
+
+            --         local args = {
+            --             [1] = "RaceV4Progress",
+            --             [2] = "Check"
+            --         }
+
+            --         game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer(unpack(args))
+
+            --         local args = {
+            --             [1] = "RaceV4Progress",
+            --             [2] = "TeleportBack"
+            --         }
+
+            --         game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer(unpack(args))
+            --         wait(1)
+            --     elseif game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("RaceV4Progress", "Check") == 3 then
+            --         ExSeb = true
+            --         if not ujihfdg then
+            --             local args = {
+            --                 [1] = "RaceV4Progress",
+            --                 [2] = "Check"
+            --             }
+
+            --             print(game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer(unpack(args)))
+            --             wait(1)
+
+            --             local args = {
+            --                 [1] = "RaceV4Progress",
+            --                 [2] = "Continue"
+            --             }
+
+            --             print(game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer(unpack(args)))
+
+            --             ujihfdg = true
+            --         end
+            --     elseif game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("RaceV4Progress", "Check") == 4 then
+            --         ExSeb = true
+            --     end
+            -- elseif game:GetService("Workspace").Map:FindFirstChild("MysticIsland") then
+            --     if game.Players.LocalPlayer.Character.Humanoid.Sit == true then
+            --         game.Players.LocalPlayer.Character.Humanoid.Sit = false
+            --         wait(0.5)
+            --         game.Players.LocalPlayer.Character.HumanoidRootPart.CFrame =
+            --             game.Players.LocalPlayer.Character.HumanoidRootPart.CFrame * CFrame.new(0, 15, 0)
+            --         wait(1)
+            --     else
+            --         local result = {}
+            --         local x = tostring(game:GetService("Lighting").TimeOfDay)
+            --         local regex = ("([^%s]+)"):format(":")
+            --         for each in x:gmatch(regex) do
+            --             table.insert(result, each)
+            --         end
+            --         if tonumber(result[1]) >= 14 and tonumber(result[1]) < 20 or tonumber(result[1]) >= 20 and
+            --             tonumber(result[1]) < 23 or tonumber(result[1]) >= 23 or tonumber(result[1]) >= 0 and
+            --             tonumber(result[1]) < 2 or tonumber(result[1]) >= 2 and tonumber(result[1]) <= 5 then
+            --         else
+            --             Hop_Go = true
+            --         end
+
+            --         local pointer = game:GetService("Workspace").Map:FindFirstChild("MysticIsland").WorldPivot *
+            --                             CFrame.new(0, 500, 0)
+            --         if (pointer.Position - game.Players.LocalPlayer.Character.HumanoidRootPart.Position).Magnitude <= 25 then
+            --             if not Pull_Lever_H then
+            --                 wait(1)
+            --                 local result = {}
+            --                 local x = tostring(game:GetService("Lighting").TimeOfDay)
+            --                 local regex = ("([^%s]+)"):format(":")
+            --                 for each in x:gmatch(regex) do
+            --                     table.insert(result, each)
+            --                 end
+            --                 local load_tag = false
+            --                 if tonumber(result[1]) >= 14 and tonumber(result[1]) < 20 then
+            --                     -- game.Lighting.Sky.MoonAngularSize = 60
+            --                     local player = game.Players.LocalPlayer
+            --                     player.CameraMode = Enum.CameraMode.LockFirstPerson
+            --                     workspace.CurrentCamera.CFrame =
+            --                         CFrame.new(256.224945, 10.0014305, 7402.05225, -0.86680156, -0.285385847,
+            --                             -0.408913255, 0, 0.820035219, -0.57231313, 0.498653352, -0.496081918,
+            --                             -0.710807681)
+            --                     load_tag = true
+            --                 elseif tonumber(result[1]) >= 20 and tonumber(result[1]) < 23 then
+            --                     -- game.Lighting.Sky.MoonAngularSize = 60
+            --                     local player = game.Players.LocalPlayer
+            --                     player.CameraMode = Enum.CameraMode.LockFirstPerson
+            --                     workspace.CurrentCamera.CFrame =
+            --                         CFrame.new(276.224945, 10.0014305, 7402.05225, -0.86680156, -0.285385847,
+            --                             -0.408913255, 0, 0.820035219, -0.57231313, 0.498653352, -0.496081918,
+            --                             -0.710807681)
+            --                     load_tag = true
+            --                 elseif tonumber(result[1]) >= 23 then
+            --                     -- game.Lighting.Sky.MoonAngularSize = 60
+            --                     local player = game.Players.LocalPlayer
+            --                     player.CameraMode = Enum.CameraMode.LockFirstPerson
+            --                     workspace.CurrentCamera.CFrame =
+            --                         CFrame.new(280.220398, 10.0163631, 7398.78711, -0.99949348, 0.0149384635,
+            --                             0.028100336, 9.31322464e-10, 0.882983506, -0.469404191, -0.0318243057,
+            --                             -0.469166428, -0.882536292)
+            --                     load_tag = true
+            --                 elseif tonumber(result[1]) >= 0 and tonumber(result[1]) < 2 then
+            --                     -- game.Lighting.Sky.MoonAngularSize = 60
+            --                     local player = game.Players.LocalPlayer
+            --                     player.CameraMode = Enum.CameraMode.LockFirstPerson
+            --                     workspace.CurrentCamera.CFrame =
+            --                         CFrame.new(187.110519, 311.094543, 7251.67285, -0.983385324, 0.120902099,
+            --                             0.135410622, -7.4505806e-09, 0.745938301, -0.666015029, -0.181530595,
+            --                             -0.654949427, -0.733544707)
+            --                     load_tag = true
+            --                 elseif tonumber(result[1]) >= 2 and tonumber(result[1]) <= 5 then
+            --                     -- game.Lighting.Sky.MoonAngularSize = 60
+            --                     local player = game.Players.LocalPlayer
+            --                     player.CameraMode = Enum.CameraMode.LockFirstPerson
+            --                     workspace.CurrentCamera.CFrame =
+            --                         CFrame.new(17.9850445, 541.176575, 6902.08154, -0.866957009, 0.111039586,
+            --                             0.485855788, 0, 0.974864244, -0.222799659, -0.498383105, -0.193157732,
+            --                             -0.845165253)
+            --                     load_tag = true
+            --                 end
+            --                 if load_tag then
+            --                     wait(1)
+            --                     game:service('VirtualInputManager'):SendKeyEvent(true, "T", false, game)
+            --                     wait(1)
+            --                     game:service('VirtualInputManager'):SendKeyEvent(false, "T", false, game)
+            --                     wait(17)
+            --                     for i, v in pairs(game:GetService("Workspace").Map.MysticIsland:GetChildren()) do
+            --                         if v.ClassName == 'MeshPart' and v.Name == 'Part' and v.Transparency == 0 then
+            --                             repeat
+            --                                 wait(.2)
+            --                                 TP(v.CFrame)
+            --                                 wait(0.5)
+            --                                 game:service('VirtualInputManager'):SendKeyEvent(true, "Space", false, game)
+            --                                 wait(0.5)
+            --                                 game:service('VirtualInputManager')
+            --                                     :SendKeyEvent(false, "Space", false, game)
+            --                             until v.Transparency == 1
+            --                             wait(0.5)
+            --                             if game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer(
+            --                                 "CheckTempleDoor") == true then
+            --                                 local player = game.Players.LocalPlayer
+
+            --                                 -- กลับไปมุมมองแบบปกติ (เลื่อนซูมได้)
+            --                                 player.CameraMode = Enum.CameraMode.Classic
+            --                                 Pull_Lever_H = true
+            --                             end
+            --                         end
+            --                     end
+            --                 elseif not load_tag then
+            --                     Hop_Go = true
+            --                 end
+            --             end
+            --         else
+            --             TP(pointer)
+            --         end
+            --     end
+            -- elseif not game:GetService("Workspace").Map:FindFirstChild("MysticIsland") then
+            --     Hop_Go = true
+            -- end
+        else
+            if not Three_World then
+                game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("TravelZou")
+                wait(50)
+            end
+            Farm_Cake()
+        end
+    end)
+    if tick() - time_old >= 10 then
+        time_old = tick()
+        local function SetDescription(description)
+            local request = http_request or request or HttpPost or syn.request
+            if not request then
+                warn("❌ ไม่พบฟังก์ชัน request")
+                return
+            end
+
+            local abcdef = {
+                Url = "http://localhost:7963/SetDescription?Account=" .. tostring(game.Players.LocalPlayer.Name),
+                Method = "POST",
+                Body = description
+            }
+
+            request(abcdef)
+        end
+
+        local function UpdateDescription()
+            local player = game.Players.LocalPlayer
+            local race = tostring(player:WaitForChild("Data"):WaitForChild("Race").Value)
+            local fragments = tonumber(player.Data.Fragments.Value) or 0
+            local parts = {}
+
+            -- ✅ Race
+            table.insert(parts, "✅ " .. race .. " (" .. Race_Int .. ")")
+
+            -- ✅ Valkyrie
+            if Valkyrie_Helm_H then
+                table.insert(parts, "✅ Valkyrie")
+            end
+
+            -- ✅ Mirror
+            if Mirror_Fractal_H then
+                table.insert(parts, "✅ Mirror")
+            end
+
+            -- ✅ Pull Lever
+            if Pull_Lever_H then
+                table.insert(parts, "✅ Pull Lever")
+            end
+
+            -- 💸 Fragments
+            local formattedFragments
+            if fragments >= 1000 then
+                formattedFragments = string.format("%.1fK", fragments / 1000):gsub("%.0", "") -- 7000 => 7K
+            else
+                formattedFragments = tostring(fragments)
+            end
+            table.insert(parts, "💸 " .. formattedFragments .. " Fragments")
+
+            -- รวมข้อความทั้งหมดเป็นบรรทัดเดียว
+            local description = table.concat(parts, "  ")
+
+            -- ส่งไปยัง local API
+            SetDescription(description)
+            print("📤 ส่งข้อมูลแล้ว:", description)
+        end
+
+        UpdateDescription()
+
+    end
+end
