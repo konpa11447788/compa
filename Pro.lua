@@ -244,16 +244,15 @@ if not jopod then
     if _G.Setting['Owner Beast Hunter'] == nil then
         _G.Setting['Owner Beast Hunter'] = '...'
     end
-
+   
     local placeId = game.PlaceId
     if placeId == 2753915549 then
     Old_World = true
-elseif placeId == 79091703265657 then
+elseif placeId == 79091703265657 or placeId == 4442272183 then
     New_World = true
-elseif placeId == 100117331123089 then
+elseif placeId == 100117331123089 or placeId == 7449423635 then
     Three_World = true
 end
-
     local function click(a)
         game:GetService("VirtualInputManager"):SendMouseButtonEvent(a.AbsolutePosition.X + a.AbsoluteSize.X / 2,
             a.AbsolutePosition.Y + 90, 0, true, a, 1)
