@@ -247,12 +247,12 @@ if not jopod then
    
     local placeId = game.PlaceId
     if placeId == 2753915549 then
-    Old_World = true
-elseif placeId == 79091703265657 or placeId == 4442272183 then
-    New_World = true
-elseif placeId == 100117331123089 or placeId == 7449423635 then
-    Three_World = true
-end
+        Old_World = true
+    elseif placeId == 79091703265657 or placeId == 4442272183 then
+        New_World = true
+    elseif placeId == 100117331123089 or placeId == 7449423635 then
+        Three_World = true
+    end
     local function click(a)
         game:GetService("VirtualInputManager"):SendMouseButtonEvent(a.AbsolutePosition.X + a.AbsoluteSize.X / 2,
             a.AbsolutePosition.Y + 90, 0, true, a, 1)
@@ -16406,9 +16406,9 @@ end
                                         0.96667254, -1.91044602e-08, 1, 4.26172626e-08, -0.96667254, -7.55705631e-09,
                                         -0.256015986))
                                 end
-
-                                if not jiujsdoif then
-                                    jiujsdoif = true
+                                local ran = math.random(20,40)
+                                if not jiujsdoif or tick() - jiujsdoif >= ran then
+                                    jiujsdoif = tick()
 
                                     local HttpService = game:GetService("HttpService")
                                     local fileName = "All_Server_God.json"
@@ -16419,13 +16419,7 @@ end
                                         writefile(fileName, HttpService:JSONEncode({}))
                                     end
 
-                                    -- อ่านข้อมูลเก่า
-                                    local success, data = pcall(function()
-                                        return HttpService:JSONDecode(readfile(fileName))
-                                    end)
-                                    if not success or typeof(data) ~= "table" then
-                                        data = {}
-                                    end
+                                    data = {}
 
                                     -- ถ้ายังไม่มี JobId นี้ให้เพิ่มเข้าไป
                                     if not table.find(data, jobId) then
@@ -16435,12 +16429,6 @@ end
                                     else
                                         print("⚠️ JobId นี้มีอยู่แล้ว:", jobId)
                                     end
-                                end
-
-                                if TimeLoaderx == nil or tick() - TimeLoaderx > 30 then
-                                    TimeLoaderx = tick()
-                                    game.ReplicatedStorage.DefaultChatSystemChatEvents.SayMessageRequest:FireServer(
-                                        "I have God Chalice.", "All")
                                 end
                             elseif not game.Players.LocalPlayer.Backpack:FindFirstChild("God's Chalice") and
                                 not game.Players.LocalPlayer.Character:FindFirstChild("God's Chalice") then
