@@ -247,12 +247,12 @@ if not jopod then
 
     local placeId = game.PlaceId
     if placeId == 2753915549 then
-        Old_World = true
-    elseif placeId == 4442272183 then
-        New_World = true
-    elseif placeId == 7449423635 then
-        Three_World = true
-    end
+    Old_World = true
+elseif placeId == 79091703265657 then
+    New_World = true
+elseif placeId == 100117331123089 then
+    Three_World = true
+end
 
     local function click(a)
         game:GetService("VirtualInputManager"):SendMouseButtonEvent(a.AbsolutePosition.X + a.AbsoluteSize.X / 2,
