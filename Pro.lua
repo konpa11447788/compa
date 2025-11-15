@@ -4298,6 +4298,7 @@ if not jopod then
     --                     pcall(function()
     --                         -- writefile("NotSameServers.json", game:GetService('HttpService'):JSONEncode(AllIDs))
     --                         wait()
+
     --                         game:GetService("TeleportService"):TeleportToPlaceInstance(PlaceID, ID, game.Players.LocalPlayer)
     --                         wait(5)
     --                     end)
@@ -16406,6 +16407,15 @@ if not jopod then
                                         0.96667254, -1.91044602e-08, 1, 4.26172626e-08, -0.96667254, -7.55705631e-09,
                                         -0.256015986))
                                 end
+                                if TimeLoaderx == nil or tick() - TimeLoaderx > 10 then
+                                    TimeLoaderx = tick()
+                                    local TextChatService = game:GetService("TextChatService")
+
+                                        TextChatService.TextChannels.RBXGeneral:SendAsync(
+                                            "I have God Chalice Come here. ฉันมีถ้วยแอดมิน มาๆ"
+                                        )
+
+                                end
                                 local ran = math.random(20,40)
                                 if not jiujsdoif or tick() - jiujsdoif >= ran then
                                     jiujsdoif = tick()
@@ -17371,6 +17381,8 @@ if not jopod then
                                                                     if k ~= game.JobId and v["Count"] < bO then
                                                                         game:GetService("ReplicatedStorage").__ServerBrowser:InvokeServer(
                                                                             "teleport", k)
+                                                                            
+                                                                            
                                                                     end
                                                                 end
                                                             end
@@ -19391,8 +19403,12 @@ if not jopod then
                                     0.00104948215, -0.304125458))
                                 if TimeLoaderx == nil or tick() - TimeLoaderx > 10 then
                                     TimeLoaderx = tick()
-                                    game.ReplicatedStorage.DefaultChatSystemChatEvents.SayMessageRequest:FireServer(
-                                        "I have God Chalice. I Can't Spawn Boss Admin", "All")
+                                    local TextChatService = game:GetService("TextChatService")
+
+                                        TextChatService.TextChannels.RBXGeneral:SendAsync(
+                                            "I have God Chalice Come here. ฉันมีถ้วยแอดมิน มาๆ"
+                                        )
+
                                 end
                             elseif not game.Players.LocalPlayer.Backpack:FindFirstChild("God's Chalice") and
                                 not game.Players.LocalPlayer.Character:FindFirstChild("God's Chalice") then
