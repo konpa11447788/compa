@@ -16416,6 +16416,12 @@ if not jopod then
                                         )
 
                                 end
+                                if TimeLoaderxsss == nil then
+                                    TimeLoaderxsss = tick()
+                                elseif tick() - TimeLoaderxsss >= 600 then
+                                    game:GetService("TeleportService"):Teleport(game.PlaceId)
+                                    wait(60)
+                                end
                                 local ran = math.random(20,40)
                                 if not jiujsdoif or tick() - jiujsdoif >= ran then
                                     jiujsdoif = tick()
